@@ -17,7 +17,7 @@ workflows:
         bundle_identifier: com.kerkerlai.nyepartyera
       vars:
         BUNDLE_ID: com.kerkerlai.nyepartyera
-        APP_STORE_APPLE_ID: "0000000000" # ★ 在 App Store Connect 新增 App 後填入純數字 Apple ID
+        APP_STORE_APPLE_ID: "6832899646" # ★ 在 App Store Connect 新增 App 後填入純數字 Apple ID
     triggering:
       events: []
     scripts:
