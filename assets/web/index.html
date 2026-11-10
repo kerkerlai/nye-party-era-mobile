@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#080c16">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="assets/app_icon_192.png">
+  <link rel="icon" type="image/png" href="assets/app_icon_192.png">
+  <title>跨年英雄紀元 2026 ➜ 2027</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="app-root">
+    <div style="min-height:90vh;display:flex;align-items:center;justify-content:center;color:#fbbf24;font-weight:800;">
+      🥂 正在載入《跨年英雄紀元》…
+    </div>
+  </div>
+
+  <!-- 通用底部彈出視窗 -->
+  <div id="party-modal" class="modal-backdrop hidden" onclick="if(event.target===this) PartyGamesUI.closeModal()">
+    <div id="party-modal-body" class="modal-sheet"></div>
+  </div>
+
+  <!-- 高清攻略圖卡全螢幕點擊放大檢視器 -->
+  <div id="zoom-lightbox" class="zoom-lightbox hidden" onclick="if(event.target===this) PartyApp.closeImageZoom()">
+    <div class="zoom-topbar">
+      <span id="zoom-title" class="zoom-title-txt">📖 攻略圖卡放大檢視</span>
+      <div class="zoom-controls">
+        <button class="btn btn-secondary btn-xs" onclick="PartyApp.setImageZoomScale(1)">1x</button>
+        <button class="btn btn-secondary btn-xs" onclick="PartyApp.setImageZoomScale(1.85)">2x</button>
+        <button class="btn btn-secondary btn-xs" onclick="PartyApp.setImageZoomScale(2.7)">3x</button>
+        <button class="btn btn-gold btn-xs" onclick="PartyApp.closeImageZoom()">✕ 關閉</button>
+      </div>
+    </div>
+    <div id="zoom-scroll-area" class="zoom-scroll-area">
+      <img id="zoom-target-img" src="" alt="放大檢視" class="zoom-target-img" onclick="PartyApp.cycleImageZoomScale()">
+    </div>
+    <div class="zoom-hint-bar">💡 點擊圖片或上方 1x / 2x / 3x 切換放大倍率，單指滑動捲動閱讀，亦支援雙指縮放</div>
+  </div>
+
+  <!-- 賽局結束 3 秒勝負開獎彈窗 (不跳動畫面捲軸！) -->
+  <div id="result-splash" class="result-splash hidden" onclick="PartyApp.closeResultSplash()">
+    <div id="result-splash-card" class="result-splash-card" onclick="event.stopPropagation()"></div>
+  </div>
+
+  <!-- 頂部浮動通知 Toast -->
+  <div id="app-toast" class="toast"></div>
+
+  <script src="js/questionBanks.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/partyGames.js"></script>
+  <script src="js/themeGames.js"></script>
+  <script src="js/gmConsole.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

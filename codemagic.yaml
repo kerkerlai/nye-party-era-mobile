@@ -1,0 +1,80 @@
+# Codemagic CI/CD — 《跨年英雄紀元》(iOS TestFlight + Android APK/AAB)
+# 沿用你《鋼鐵英雄 2.0》的 App Store Connect API 整合名稱 (ironheroes_asc)，免 Mac 雲端自動打包！
+
+workflows:
+  ios-testflight:
+    name: iOS → TestFlight (跨年英雄紀元)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: ironheroes_asc
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.kerkerlai.nyepartyera
+      vars:
+        BUNDLE_ID: com.kerkerlai.nyepartyera
+        APP_STORE_APPLE_ID: "0000000000" # ★ 在 App Store Connect 新增 App 後填入純數字 Apple ID
+    triggering:
+      events: []
+    scripts:
+      - name: Flutter packages
+        script: flutter pub get
+      - name: App SW QA tests
+        script: flutter test
+      - name: Set iOS Bundle Identifier (Runner & RunnerTests)
+        script: |
+          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*RunnerTests;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID}.RunnerTests;/g" ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' "/RunnerTests/!s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};/g" ios/Runner.xcodeproj/project.pbxproj
+      - name: Prepare iOS config & CocoaPods (if used)
+        script: |
+          flutter build ios --config-only --no-codesign
+          if [ -f ios/Podfile ]; then
+            cd ios && pod install --repo-update
+          fi
+      - name: Apply provisioning profiles
+        script: xcode-project use-profiles
+      - name: Build IPA
+        script: |
+          set -e
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || echo "")
+          if [ -n "$LATEST" ] && [ "$LATEST" -eq "$LATEST" ] 2>/dev/null; then
+            NEXT=$((LATEST + 1))
+          else
+            NEXT=$((BUILD_NUMBER + 1))
+          fi
+          flutter build ipa --release \
+            --build-number=$NEXT \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+
+  android-apk:
+    name: Android → APK + AAB (跨年英雄紀元)
+    max_build_duration: 45
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+      java: 21
+    triggering:
+      events: []
+    scripts:
+      - name: Flutter packages
+        script: flutter pub get
+      - name: App SW QA tests
+        script: flutter test
+      - name: Build Release APK
+        script: flutter build apk --release --build-number=$((BUILD_NUMBER + 1))
+      - name: Build Release AAB
+        script: flutter build appbundle --release --build-number=$((BUILD_NUMBER + 1))
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
+      - build/app/outputs/bundle/release/app-release.aab

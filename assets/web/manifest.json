@@ -1,0 +1,22 @@
+{
+  "name": "跨年英雄紀元 2026 ➜ 2027",
+  "short_name": "跨年英雄紀元",
+  "description": "包棟派對專屬互動、賽桌押注與個人戰況 App",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#080c16",
+  "theme_color": "#080c16",
+  "icons": [
+    {
+      "src": "assets/app_icon_192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/app_icon_512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
