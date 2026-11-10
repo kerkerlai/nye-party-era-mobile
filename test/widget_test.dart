@@ -523,6 +523,10 @@ void main() {
       final plist = File('ios/Runner/Info.plist').readAsStringSync();
       expect(plist.contains('<key>NSCameraUsageDescription</key>'), isTrue);
       expect(plist.contains('<key>NSPhotoLibraryUsageDescription</key>'), isTrue);
+      expect(plist.contains('UIInterfaceOrientationPortrait'), isTrue);
+      expect(plist.contains('UIInterfaceOrientationPortraitUpsideDown'), isTrue);
+      expect(plist.contains('UIInterfaceOrientationLandscapeLeft'), isTrue);
+      expect(plist.contains('UIInterfaceOrientationLandscapeRight'), isTrue);
 
       final appDelegate = File('ios/Runner/AppDelegate.swift').readAsStringSync();
       expect(
