@@ -943,9 +943,13 @@
    *  2. 將 seasonStatus 鎖定為 'settled'、sceneOverride 設為 'viewer'
    */
   async function executeFinalSettlement(snapshot) {
-    const { players, ledger, tables, bets, claims, claimApprovals, globalCfg } = snapshot;
+    const { players, ledger, tables, bets, claims, claimApprovals, globalCfg, schedule } = snapshot;
     const preBoard = computeScoreboard(players, ledger, tables, claims, claimApprovals);
-    const dayKey = "2027-01-03";
+    const normSlots = getNormalizedSlots(schedule, globalCfg);
+    const lastSlotDate = normSlots.length
+      ? taipeiParts(normSlots[normSlots.length - 1].startMs).dateKey
+      : "2027-01-03";
+    const dayKey = globalCfg?.activeDayKey || lastSlotDate;
 
     // Helper: 依「1. 主指標高 -> 2. 互動廣度高 -> 3. 最早達成時間早」選出第 1 名(若完全並列則同獲獎)
     function pickCrownWinners(candidates) {
@@ -1082,11 +1086,12 @@
       );
     }
 
-    // 永久凍結全服轉為 Viewer 模式
+    // 永久凍結全服轉為 Viewer 模式（預設從頒獎典禮第 1 幕開始揭曉，若已指定幕數則保留）
     const settledCfg = {
       ...(globalCfg || CFG.DEFAULTS),
       seasonStatus: "settled",
       sceneOverride: "viewer",
+      ceremonyStage: Number(globalCfg?.ceremonyStage) || 1,
     };
     await window.PartyDB.upsert("config", [{ key: "global", value: settledCfg }]);
   }

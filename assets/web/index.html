@@ -24,6 +24,11 @@
     <div id="party-modal-body" class="modal-sheet"></div>
   </div>
 
+  <!-- 獨立全螢幕遊戲對戰視窗（參賽／觀戰專屬獨立空間，讓大廳永遠乾淨不雜亂！） -->
+  <div id="game-room-overlay" class="game-room-overlay hidden">
+    <div id="game-room-sheet" class="game-room-sheet"></div>
+  </div>
+
   <!-- 高清攻略圖卡全螢幕點擊放大檢視器 -->
   <div id="zoom-lightbox" class="zoom-lightbox hidden" onclick="if(event.target===this) PartyApp.closeImageZoom()">
     <div class="zoom-topbar">
@@ -45,6 +50,9 @@
   <div id="result-splash" class="result-splash hidden" onclick="PartyApp.closeResultSplash()">
     <div id="result-splash-card" class="result-splash-card" onclick="event.stopPropagation()"></div>
   </div>
+
+  <!-- 跨年煙火 ＆ 紅包金幣雨全螢幕特效畫布 -->
+  <canvas id="fx-canvas" style="position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:250;display:none;"></canvas>
 
   <!-- 頂部浮動通知 Toast -->
   <div id="app-toast" class="toast"></div>

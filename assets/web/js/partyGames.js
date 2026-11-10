@@ -38,16 +38,149 @@
     activeCountdownMin: 2,
     activeModalTestMode: false,
     forceModalTestOnly: false,
+    activeRoomTableId: null,
+    minimizedRoomIds: new Set(),
+    lastAutoOpenedStatus: {},
     quickDrawTimers: {},
     blindStopwatchStart: {},
     fiveSecTimer: null,
 
-    renderGameRuleBlock(gameMeta, collapsible = false, defaultOpen = false) {
+    getMyActiveTable(playerId, tables) {
+      if (!playerId) return null;
+      return (
+        (tables || []).find(
+          (t) =>
+            (t.status === "open" || t.status === "playing" || t.status === "settling") &&
+            (t.participants || []).some((p) => p.id === playerId)
+        ) || null
+      );
+    },
+
+    openRoomWindow(tableId) {
+      if (!tableId) return;
+      this.activeRoomTableId = tableId;
+      this.minimizedRoomIds.delete(tableId);
+      window.PartyApp.render();
+    },
+
+    minimizeRoomWindow() {
+      if (this.activeRoomTableId) {
+        this.minimizedRoomIds.add(this.activeRoomTableId);
+        this.activeRoomTableId = null;
+      }
+      const overlay = document.getElementById("game-room-overlay");
+      if (overlay) overlay.classList.add("hidden");
+      window.PartyApp.render();
+    },
+
+    syncRoomOverlay(ctx) {
+      const overlay = document.getElementById("game-room-overlay");
+      const sheet = document.getElementById("game-room-sheet");
+      if (!overlay || !sheet) return;
+
+      if (!ctx || !ctx.me || ctx.sceneInfo?.scene === "pre_event" || ctx.sceneInfo?.scene === "viewer") {
+        this.activeRoomTableId = null;
+        overlay.classList.add("hidden");
+        return;
+      }
+
+      const tables = ctx.tables || [];
+      const myActive = this.getMyActiveTable(ctx.me.id, tables);
+      if (myActive) {
+        const prevSt = this.lastAutoOpenedStatus[myActive.id];
+        // 若房間剛從集結進入正式開戰 (playing)，自動幫參賽者彈開獨立對戰視窗！
+        if (prevSt && prevSt !== myActive.status && myActive.status === "playing") {
+          this.minimizedRoomIds.delete(myActive.id);
+        }
+        this.lastAutoOpenedStatus[myActive.id] = myActive.status;
+        if (!this.activeRoomTableId && !this.minimizedRoomIds.has(myActive.id)) {
+          this.activeRoomTableId = myActive.id;
+        }
+      }
+
+      // 檢查當前視窗指定的賽桌是否仍在進行中（若已完賽或取消則自動關閉視窗！）
+      const targetTable = this.activeRoomTableId
+        ? tables.find(
+            (t) =>
+              t.id === this.activeRoomTableId &&
+              (t.status === "open" || t.status === "playing" || t.status === "settling")
+          )
+        : null;
+
+      if (!targetTable) {
+        this.activeRoomTableId = null;
+        overlay.classList.add("hidden");
+        return;
+      }
+
+      // 保存對戰視窗內的捲軸、展開折疊框與輸入草稿（如終極密碼數字框）
+      const prevBody = sheet.querySelector(".game-room-body");
+      const prevScroll = prevBody ? prevBody.scrollTop : 0;
+      const savedDrafts = {};
+      const activeId = document.activeElement?.id || "";
+      sheet.querySelectorAll("input[id], textarea[id], select[id]").forEach((el) => {
+        if (el.type === "file" || el.type === "checkbox" || el.type === "radio") return;
+        if (el.dataset.dirty === "1" || el === document.activeElement) {
+          savedDrafts[el.id] = el.value;
+        }
+      });
+      const openDetailsIdx = [];
+      sheet.querySelectorAll("details").forEach((d, idx) => {
+        if (d.open) openDetailsIdx.push(idx);
+      });
+
+      const playerMap = {};
+      (ctx.players || []).forEach((p) => (playerMap[p.id] = p));
+      const gameMeta =
+        CFG.PARTY_GAMES.find((x) => x.id === targetTable.game_type) || CFG.PARTY_GAMES[0];
+      const amIn = (targetTable.participants || []).some((p) => p.id === ctx.me.id);
+
+      overlay.classList.remove("hidden");
+      sheet.innerHTML = `
+        <div class="game-room-topbar">
+          <div style="min-width:0;flex:1;">
+            <div style="font-weight:900;font-size:15.5px;color:#fef08a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+              ${gameMeta.icon} ${esc(targetTable.title)}
+            </div>
+            <div class="muted-xs">
+              ${amIn ? "⚔️ 你的專屬獨立對戰室（完賽後自動結算關閉）" : "👀 旁觀／場邊押注模式"}
+            </div>
+          </div>
+          <button type="button" class="btn btn-secondary btn-xs" onclick="PartyGamesUI.minimizeRoomWindow()">
+            ${amIn ? "🔽 縮小回大廳" : "✕ 關閉視窗"}
+          </button>
+        </div>
+        <div class="game-room-body">
+          ${this.renderTableCard(targetTable, ctx, playerMap)}
+        </div>
+      `;
+
+      const nextBody = sheet.querySelector(".game-room-body");
+      if (nextBody) nextBody.scrollTop = prevScroll;
+      const newDetails = sheet.querySelectorAll("details");
+      openDetailsIdx.forEach((idx) => {
+        if (newDetails[idx]) newDetails[idx].open = true;
+      });
+      Object.entries(savedDrafts).forEach(([id, val]) => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.value = val;
+          el.dataset.dirty = "1";
+          if (id === activeId) el.focus();
+        }
+      });
+    },
+
+    renderGameRuleBlock(gameMeta, collapsible = false, defaultOpen = false, globalCfg = null) {
       if (!gameMeta) return "";
+      const dynScoring =
+        CFG.getDynamicScoringRule
+          ? CFG.getDynamicScoringRule(gameMeta, globalCfg || window.PartyApp?.data?.globalCfg)
+          : gameMeta.scoringRule || "";
       const body = `
         <div class="rule-block-inner">
           <div><b class="cyan-text">🎯 玩法規則（${gameMeta.minPlayers}～${gameMeta.maxPlayers}人）：</b>${esc(gameMeta.howToPlay || gameMeta.desc)}</div>
-          <div style="margin-top:5px;"><b class="gold-text">💰 計分派彩：</b>${esc(gameMeta.scoringRule || "")}</div>
+          <div style="margin-top:5px;"><b class="gold-text">💰 計分派彩：</b>${esc(dynScoring)}</div>
         </div>
       `;
       if (!collapsible) {
@@ -88,7 +221,21 @@
         .sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)))
         .slice(0, 5);
 
+      const myActiveTbl = this.getMyActiveTable(me.id, tables);
+
       return `
+        ${
+          myActiveTbl
+            ? `<div class="active-room-return-bar" onclick="PartyGamesUI.openRoomWindow('${myActiveTbl.id}')">
+                 <div>
+                   <div style="font-weight:900;color:#fef08a;font-size:14.5px;">🎮 你正在房間內：【${esc(myActiveTbl.title)}】</div>
+                   <div class="muted-xs">一次限參加 1 場遊戲・點此立即回到你的獨立對戰視窗！</div>
+                 </div>
+                 <span class="btn btn-gold btn-xs" style="flex-shrink:0;">進入房間 ▸</span>
+               </div>`
+            : ""
+        }
+
         <div class="party-banner ${isHappy ? "happy-hour" : ""}" ${forceTestOnly ? 'style="border-color:rgba(56,189,248,0.55);"' : ""}>
           <div class="party-banner-top">
             <span class="scene-pill ${forceTestOnly ? "pill-cyan" : isHappy ? "pill-fire" : "pill-gold"}">
@@ -100,9 +247,13 @@
                   : "🎲 Party Game 自由賽桌時段"
               }
             </span>
-            <button class="btn ${forceTestOnly ? "btn-primary" : "btn-gold"} btn-sm" onclick="PartyGamesUI.openCreateModal(${forceTestOnly})">
-              ${forceTestOnly ? "🧪 開免費測試局" : "➕ 開新賽桌"}
-            </button>
+            ${
+              myActiveTbl
+                ? `<button class="btn btn-gold btn-sm" onclick="PartyGamesUI.openRoomWindow('${myActiveTbl.id}')">🎮 回到我的房間</button>`
+                : `<button class="btn ${forceTestOnly ? "btn-primary" : "btn-gold"} btn-sm" onclick="PartyGamesUI.openCreateModal(${forceTestOnly})">
+                     ${forceTestOnly ? "🧪 開免費測試局" : "➕ 開新賽桌"}
+                   </button>`
+            }
           </div>
           ${
             forceTestOnly
@@ -112,10 +263,10 @@
               : `<details class="rule-guide-box" style="margin-top:9px;margin-bottom:0;">
                   <summary>📜 賽桌通用計分 ＆ 場邊下注規則（每日 08:00 重置次數）</summary>
                   <div class="rule-block-inner">
-                    <div>• <b>🧪 新手免費測試局（每款限開 1 次）</b>：開桌時可選「新手測試局」，全桌 0 押注、0 得分、不消耗正式額度！</div>
+                    <div>• <b>🚪 獨立房間制（一次限玩 1 局）</b>：每人同時只能參加 1 個賽桌，進入房間後會彈出獨立對戰視窗，不怕大廳房間多畫面亂！</div>
                     <div style="margin-top:4px;">• <b>⚔️ 參賽計分與陪玩制（每日 ${g.maxScoringPlaysPerGamePerDay} 次／款）</b>：每款遊戲每日前 ${g.maxScoringPlaysPerGamePerDay} 局押入場費 <b>${g.partyPlayStake} PT</b> 正常計分；滿 ${g.maxScoringPlaysPerGamePerDay} 次後可繼續免費<b>「🤝 陪其他人玩」</b>（你自己輸贏皆 0 分，但還沒滿 ${g.maxScoringPlaysPerGamePerDay} 次的對手仍會照常得分或失分！）。</div>
-                    <div style="margin-top:4px;">• <b>💰 場邊局外人對賭（每日 ${g.maxBetsPerGamePerDay} 次／款）</b>：沒下場的觀眾可押 <b>${g.partyBetStake} PT</b> 猜贏家（與參賽次數獨立計算！）。<b>需雙邊不同選項都有人押才成立彩池</b>，猜中者平分全場賭金；若全場押同一邊無對家或無人猜中，<b>100% 全額退回本金</b>！</div>
-                    <div style="margin-top:4px;">• <b>🔥 Happy Hour 限時加成</b>：系統免費額外補貼選手總獎池（或合作過關淨利）<b>+50%</b>！每日首桌完賽桌長再拿【🚀 破冰先鋒 +25 PT】。</div>
+                    <div style="margin-top:4px;">• <b>💰 場邊局外人對賭（每日 ${g.maxBetsPerGamePerDay} 次／款）</b>：沒下場的觀眾可點進房間押 <b>${g.partyBetStake} PT</b> 猜贏家（與參賽次數獨立計算！）。<b>需雙邊不同選項都有人押才成立彩池</b>，單邊或無人猜中 <b>100% 全額退回本金</b>！</div>
+                    <div style="margin-top:4px;">• <b>🔥 Happy Hour 限時加成</b>：系統免費額外補貼選手總獎池（或合作過關淨利）<b>+${Math.round((Number(g.happyHourBonusRate) || 0.5) * 100)}%</b>！每日首桌完賽桌長再拿【🚀 破冰先鋒 +25 PT】。</div>
                   </div>
                 </details>`
           }
@@ -130,14 +281,14 @@
                   ${
                     forceTestOnly
                       ? "點下方按鈕任選一款遊戲開啟你的 1 次免費不計分測試局（可揪人或召喚 AI 陪練員）！"
-                      : "快開第一桌揪大家過來玩（第一次玩也可選「🧪 新手測試局」先試水溫）！"
+                      : "快開第一桌揪大家過來玩（開房或參賽後會自動彈出專屬對戰視窗）！"
                   }
                 </div>
                 <button class="btn ${forceTestOnly ? "btn-primary" : "btn-gold"}" onclick="PartyGamesUI.openCreateModal(${forceTestOnly})">
                   ${forceTestOnly ? "🧪 立即開啟不計分測試局" : "➕ 立即建立賽桌（1～3 分鐘揪團）"}
                 </button>
               </div>`
-            : activeTables.map((t) => this.renderTableCard(t, ctx, playerMap)).join("")
+            : activeTables.map((t) => this.renderLobbyDoorCard(t, ctx, playerMap, myActiveTbl)).join("")
         }
 
         <div class="section-card" style="margin-top:16px;">
@@ -190,6 +341,118 @@
               </div>`
             : ""
         }
+      `;
+    },
+
+    renderLobbyDoorCard(table, ctx, playerMap, myActiveTbl) {
+      const { me, tables, bets, globalCfg } = ctx;
+      const g = { ...CFG.DEFAULTS, ...(globalCfg || {}) };
+      const gameMeta = CFG.PARTY_GAMES.find((x) => x.id === table.game_type) || CFG.PARTY_GAMES[0];
+      const parts = table.participants || [];
+      const amIn = parts.some((p) => p.id === me.id);
+      const tableBets = (bets || []).filter((b) => b.table_id === table.id);
+      const myBet = tableBets.find((b) => b.bettor_id === me.id);
+      const usage = window.PartyEngine.getDailyGameUsage(
+        me.id,
+        table.game_type,
+        table.day_key,
+        tables,
+        bets
+      );
+      const canJoinMore = parts.length < gameMeta.maxPlayers;
+      const nextIsScoring = usage.playCount < g.maxScoringPlaysPerGamePerDay;
+      const busyElsewhere = Boolean(myActiveTbl && myActiveTbl.id !== table.id);
+
+      const remainSec = Math.max(
+        0,
+        Math.ceil((Date.parse(table.opens_until) - window.PartyDB.serverNowMs) / 1000)
+      );
+      const mm = String(Math.floor(remainSec / 60)).padStart(2, "0");
+      const ss = String(remainSec % 60).padStart(2, "0");
+      const hostName =
+        playerMap[table.host_id]?.name || table.host_name || parts[0]?.name || "桌長";
+      const minNeed =
+        table.game_type === "soul_sync_2v2" && parts.length === 3
+          ? 1
+          : Math.max(0, gameMeta.minPlayers - parts.length);
+
+      return `
+        <div class="lobby-door-card ${amIn ? "my-room-border" : table.is_happy_hour ? "hh-border" : ""}">
+          <div class="table-header" style="margin-bottom:6px;">
+            <div>
+              <span class="game-chip">${gameMeta.icon} ${esc(table.title)}</span>
+              ${
+                table.is_test_run
+                  ? `<span class="scene-pill pill-cyan" style="margin-left:4px;font-size:11px;">🧪 測試局(0分)</span>`
+                  : table.is_happy_hour
+                  ? `<span class="hh-tag">🔥 獎池+${Math.round((Number(g.happyHourBonusRate) || 0.5) * 100)}%</span>`
+                  : ""
+              }
+              ${
+                table.status === "open"
+                  ? minNeed > 0
+                    ? `<span class="hh-tag" style="background:linear-gradient(135deg,#f97316,#e11d48);">🔥 差 ${minNeed} 人開局！</span>`
+                    : canJoinMore
+                    ? `<span class="q-tag q-ok" style="margin-left:4px;">🟢 人數達標可開戰</span>`
+                    : `<span class="q-tag q-muted" style="margin-left:4px;">🔒 已滿員</span>`
+                  : ""
+              }
+            </div>
+            <span class="status-badge st-${table.status} ${table.status === "open" ? "live-countdown" : ""}" ${table.status === "open" ? `data-until="${esc(table.opens_until)}"` : ""}>
+              ${
+                table.status === "open"
+                  ? `⏳ 集結＆下注倒數 ${mm}:${ss}`
+                  : table.status === "playing"
+                  ? "⚔️ 對戰進行中"
+                  : "⚖️ 確認勝負中"
+              }
+            </span>
+          </div>
+
+          <div class="muted-xs" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span>👑 房主：<b>${esc(hostName)}</b> ｜ 🏃 選手 (${parts.length}/${gameMeta.maxPlayers})：<b>${parts.map((p) => esc(p.name)).join("、") || "等待加入"}</b></span>
+            ${
+              myBet
+                ? `<span class="gold-text">💰 你已押：${esc(myBet.pick_label)}</span>`
+                : !table.is_test_run && tableBets.length > 0
+                ? `<span class="cyan-text">💰 場邊彩池 ${tableBets.length} 注</span>`
+                : ""
+            }
+          </div>
+
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            ${
+              amIn
+                ? `<button class="btn btn-gold btn-sm" style="width:100%;" onclick="PartyGamesUI.openRoomWindow('${table.id}')">
+                     🎮 進入我的獨立對戰視窗
+                   </button>`
+                : table.status === "open"
+                ? `
+                    ${
+                      busyElsewhere
+                        ? `<button class="btn btn-secondary btn-xs" style="flex:1;" disabled>🔒 你正在另一房參賽中（限玩1局）</button>`
+                        : canJoinMore && !myBet
+                        ? `<button class="btn btn-primary btn-sm" style="flex:1.2;" onclick="PartyGamesUI.joinTable('${table.id}')">
+                             🙋 ${
+                               table.is_test_run
+                                 ? "加入測試(0分)"
+                                 : nextIsScoring
+                                 ? `加入參賽(-${table.stake} PT)`
+                                 : "🤝 陪玩參賽(0分)"
+                             }
+                           </button>`
+                        : ""
+                    }
+                    <button class="btn btn-secondary btn-sm" style="flex:1;" onclick="PartyGamesUI.openRoomWindow('${table.id}')">
+                      ${table.is_test_run ? "👀 查看房間" : `💰 進房下注／觀戰 (${tableBets.length}注)`}
+                    </button>
+                  `
+                : `<button class="btn btn-secondary btn-sm" style="width:100%;" onclick="PartyGamesUI.openRoomWindow('${table.id}')">
+                     👀 點擊進入視窗觀戰${myBet ? `（已押：${esc(myBet.pick_label)}）` : ""}
+                   </button>`
+            }
+          </div>
+        </div>
       `;
     },
 
@@ -339,19 +602,43 @@
 
           ${
             isHost
-              ? `<div class="host-row">
-                  <button class="btn btn-gold" ${!canStartNow ? "disabled" : ""} onclick="PartyGamesUI.startTable('${table.id}')">
-                    🚀 ${remainSec === 0 ? "時間到！立即開賽" : `人齊提前開賽（${table.game_type === "soul_sync_2v2" ? "2人合作 / 4人對抗" : `至少 ${gameMeta.minPlayers} 人`}）`}
-                  </button>
-                  ${
-                    table.is_test_run && !canStartNow
-                      ? `<button class="btn btn-primary btn-sm" onclick="PartyGamesUI.startTestWithBots('${table.id}')">
-                           🤖 補齊 AI 陪練員・立即單人試玩！
-                         </button>`
-                      : ""
-                  }
-                  <button class="btn btn-danger btn-sm" onclick="PartyGamesUI.cancelTable('${table.id}')">取消賽桌</button>
-                </div>`
+              ? (() => {
+                  const lastNudgeAt = Number(table.game_state?.lastNudgeAt) || 0;
+                  const nudgeCoolSec = Math.max(
+                    0,
+                    Math.ceil((lastNudgeAt + 20000 - window.PartyDB.serverNowMs) / 1000)
+                  );
+                  const minNeed =
+                    table.game_type === "soul_sync_2v2" && parts.length === 3
+                      ? 1
+                      : Math.max(0, gameMeta.minPlayers - parts.length);
+                  return `<div class="host-row">
+                    <button class="btn btn-gold" ${!canStartNow ? "disabled" : ""} onclick="PartyGamesUI.startTable('${table.id}')">
+                      🚀 ${remainSec === 0 ? "時間到！立即開賽" : `人齊提前開賽（${table.game_type === "soul_sync_2v2" ? "2人合作 / 4人對抗" : `至少 ${gameMeta.minPlayers} 人`}）`}
+                    </button>
+                    ${
+                      !table.is_test_run && canJoinMore
+                        ? `<button class="btn btn-primary btn-sm" ${nudgeCoolSec > 0 ? "disabled" : ""} onclick="PartyGamesUI.nudgeTablePlayers('${table.id}')">
+                             📢 ${
+                               nudgeCoolSec > 0
+                                 ? `已廣播催人 (${nudgeCoolSec}s)`
+                                 : minNeed > 0
+                                 ? `一鍵廣播催人（差 ${minNeed} 人開局！）`
+                                 : "一鍵廣播揪人加碼進房！"
+                             }
+                           </button>`
+                        : ""
+                    }
+                    ${
+                      table.is_test_run && !canStartNow
+                        ? `<button class="btn btn-primary btn-sm" onclick="PartyGamesUI.startTestWithBots('${table.id}')">
+                             🤖 補齊 AI 陪練員・立即單人試玩！
+                           </button>`
+                        : ""
+                    }
+                    <button class="btn btn-danger btn-sm" onclick="PartyGamesUI.cancelTable('${table.id}')">取消賽桌</button>
+                  </div>`;
+                })()
               : remainSec === 0 && canStartNow
               ? `<button class="btn btn-gold" onclick="PartyGamesUI.startTable('${table.id}')">⏰ 集結時間到！點此啟動對戰</button>`
               : ""
@@ -882,10 +1169,18 @@
 
     // ==================== 開桌彈窗與互動 Actions ====================
     openCreateModal(forceTestOnly = false) {
+      const ctx = window.PartyApp.getContext();
+      const existingActive = this.getMyActiveTable(ctx.me?.id, ctx.tables);
+      if (existingActive) {
+        window.PartyApp.toast(
+          `⚔️ 你目前已在【${existingActive.title}】房間內，一次只能參加一個遊戲喔！`
+        );
+        this.openRoomWindow(existingActive.id);
+        return;
+      }
       const modal = document.getElementById("party-modal");
       if (!modal) return;
       this.forceModalTestOnly = Boolean(forceTestOnly);
-      const ctx = window.PartyApp.getContext();
       if (this.forceModalTestOnly) {
         const firstUntested = CFG.PARTY_GAMES.find(
           (gm) => window.PartyEngine.getTestHostUsage(ctx.me.id, gm.id, ctx.tables) < 1
@@ -1040,70 +1335,120 @@
     },
 
     async confirmCreateTable() {
-      const ctx = window.PartyApp.getContext();
-      const g = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}) };
-      const dayKey = g.activeDayKey || "2026-12-31";
-      const gm = CFG.PARTY_GAMES.find((x) => x.id === this.activeModalGame) || CFG.PARTY_GAMES[0];
-      const testUsed = window.PartyEngine.getTestHostUsage(ctx.me.id, gm.id, ctx.tables);
-      const isTestRun = Boolean(this.forceModalTestOnly || (this.activeModalTestMode && testUsed < 1));
-      if (this.forceModalTestOnly && testUsed >= 1) {
-        window.PartyApp.toast(`【${gm.name}】的新手免費測試局（1 次）已使用過囉！`);
-        return;
-      }
+      return window.PartyDB.withLock("create_table", async () => {
+        const ctx = window.PartyApp.getContext();
+        const existingActive = this.getMyActiveTable(ctx.me?.id, ctx.tables);
+        if (existingActive) {
+          this.closeModal();
+          window.PartyApp.toast(
+            `⚔️ 你目前已在【${existingActive.title}】房間內，一次只能參加一個遊戲喔！`
+          );
+          this.openRoomWindow(existingActive.id);
+          return;
+        }
+        const g = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}) };
+        const dayKey = g.activeDayKey || "2026-12-31";
+        const gm = CFG.PARTY_GAMES.find((x) => x.id === this.activeModalGame) || CFG.PARTY_GAMES[0];
+        const testUsed = window.PartyEngine.getTestHostUsage(ctx.me.id, gm.id, ctx.tables);
+        const isTestRun = Boolean(this.forceModalTestOnly || (this.activeModalTestMode && testUsed < 1));
+        if (this.forceModalTestOnly && testUsed >= 1) {
+          window.PartyApp.toast(`【${gm.name}】的新手免費測試局（1 次）已使用過囉！`);
+          return;
+        }
 
-      const noteEl = document.getElementById("custom-table-note");
-      const note = noteEl ? noteEl.value.trim() : "";
-      const usage = window.PartyEngine.getDailyGameUsage(
-        ctx.me.id,
-        gm.id,
-        dayKey,
-        ctx.tables,
-        ctx.bets
-      );
-      const isScoring = isTestRun ? false : usage.playCount < g.maxScoringPlaysPerGamePerDay;
-      const playStake = Number(g.partyPlayStake) || 20;
-      const myScore = ctx.scoreboard.byId[ctx.me.id]?.baseScore || 0;
-      if (isScoring && myScore < playStake) {
-        window.PartyApp.toast(`💰 目前積分不足 ${playStake} PT！可先參加主題遊戲／解隱藏任務賺分，或等明早 08:00 自動補滿回 300 PT！`);
-        return;
-      }
-      const countdownSec = this.activeCountdownMin * 60;
-      const opensUntil = new Date(window.PartyDB.serverNowMs + countdownSec * 1000).toISOString();
-      const tableId = `tbl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const noteEl = document.getElementById("custom-table-note");
+        const note = noteEl ? noteEl.value.trim() : "";
+        const usage = window.PartyEngine.getDailyGameUsage(
+          ctx.me.id,
+          gm.id,
+          dayKey,
+          ctx.tables,
+          ctx.bets
+        );
+        const isScoring = isTestRun ? false : usage.playCount < g.maxScoringPlaysPerGamePerDay;
+        const playStake = Number(g.partyPlayStake) || 20;
+        const myScore = ctx.scoreboard.byId[ctx.me.id]?.baseScore || 0;
+        if (isScoring && myScore < playStake) {
+          window.PartyApp.toast(
+            `💰 目前積分不足 ${playStake} PT！可先參加主題遊戲／解隱藏任務賺分，或等明早 08:00 自動補滿回 ${g.dailyFloorPoints || 300} PT！`
+          );
+          return;
+        }
+        const countdownSec = this.activeCountdownMin * 60;
+        const opensUntil = new Date(window.PartyDB.serverNowMs + countdownSec * 1000).toISOString();
+        const tableId = `tbl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
-      const baseTitle = note ? `${gm.name}（${note}）` : gm.name;
-      const title = isTestRun ? `[測試] ${baseTitle}` : baseTitle;
-      await window.PartyDB.upsert("tables", [
-        {
-          id: tableId,
-          game_type: gm.id,
-          title,
-          host_id: ctx.me.id,
-          day_key: dayKey,
-          status: "open",
-          is_test_run: isTestRun,
-          is_happy_hour: !isTestRun && ctx.sceneInfo.scene === "happy_hour",
-          stake: isTestRun ? 0 : g.partyPlayStake || 20,
-          bet_stake: g.partyBetStake || 10,
-          countdown_sec: countdownSec,
-          opens_until: opensUntil,
-          participants: [
-            {
-              id: ctx.me.id,
-              name: ctx.me.name,
-              isScoring,
-              team: gm.id === "soul_sync_2v2" ? "team_A" : "",
-              teamLabel: gm.id === "soul_sync_2v2" ? "A組" : "",
-            },
-          ],
-          game_state: {},
-          confirmed_by: [],
-        },
-      ]);
+        const baseTitle = note ? `${gm.name}（${note}）` : gm.name;
+        const title = isTestRun ? `[測試] ${baseTitle}` : baseTitle;
+        await window.PartyDB.upsert("tables", [
+          {
+            id: tableId,
+            game_type: gm.id,
+            title,
+            host_id: ctx.me.id,
+            host_name: ctx.me.name,
+            day_key: dayKey,
+            status: "open",
+            is_test_run: isTestRun,
+            is_happy_hour: !isTestRun && ctx.sceneInfo.scene === "happy_hour",
+            stake: isTestRun ? 0 : g.partyPlayStake || 20,
+            bet_stake: g.partyBetStake || 10,
+            countdown_sec: countdownSec,
+            opens_until: opensUntil,
+            participants: [
+              {
+                id: ctx.me.id,
+                name: ctx.me.name,
+                isScoring,
+                team: gm.id === "soul_sync_2v2" ? "team_A" : "",
+                teamLabel: gm.id === "soul_sync_2v2" ? "A組" : "",
+              },
+            ],
+            game_state: {},
+            confirmed_by: [],
+          },
+        ]);
 
-      this.closeModal();
-      window.PartyFX.playTone("bell");
-      await window.PartyApp.refreshAll();
+        this.closeModal();
+        this.activeRoomTableId = tableId;
+        this.minimizedRoomIds.delete(tableId);
+        window.PartyFX.playTone("bell");
+        await window.PartyApp.refreshAll();
+      });
+    },
+
+    async nudgeTablePlayers(tableId) {
+      return window.PartyDB.withLock(`nudge_${tableId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        if (!ctx.me) return;
+        const now = window.PartyDB.serverNowMs;
+        let coolLeft = 0;
+        const tx = await window.PartyDB.transactRow("tables", tableId, (cur) => {
+          if (!cur || cur.status !== "open") return undefined;
+          const prevNudge = Number(cur.game_state?.lastNudgeAt) || 0;
+          if (now - prevNudge < 18000) {
+            coolLeft = Math.ceil((prevNudge + 20000 - now) / 1000);
+            return undefined;
+          }
+          cur.game_state = {
+            ...(cur.game_state || {}),
+            lastNudgeAt: now,
+            lastNudgeBy: ctx.me.name,
+            lastNudgeHostId: ctx.me.id,
+          };
+          return cur;
+        });
+        if (!tx.committed) {
+          if (coolLeft > 0) {
+            window.PartyApp.toast(`⏳ 廣播冷卻中，請過 ${coolLeft} 秒再催喔！`);
+          }
+          return;
+        }
+        window.PartyFX.playTone("bell");
+        window.PartyFX.haptic("medium");
+        window.PartyApp.toast(`📢 已以房主【${ctx.me.name}】名義向全場發送催人推播！`);
+        await window.PartyApp.refreshAll();
+      });
     },
 
     async startTestWithBots(tableId) {
@@ -1146,83 +1491,126 @@
     },
 
     async joinTable(tableId) {
-      const ctx = window.PartyApp.getContext();
-      const freshRows = await window.PartyDB.select(
-        "tables",
-        `id=eq.${encodeURIComponent(tableId)}`
-      );
-      const table = (freshRows && freshRows[0]) || (ctx.tables || []).find((t) => t.id === tableId);
-      if (!table || table.status !== "open") return;
-      const gameMeta = CFG.PARTY_GAMES.find((x) => x.id === table.game_type) || CFG.PARTY_GAMES[0];
-      const parts = [...(table.participants || [])];
-      if (parts.some((p) => p.id === ctx.me.id)) return;
-      if (parts.length >= gameMeta.maxPlayers) {
-        window.PartyApp.toast(`此賽桌已滿員（最多 ${gameMeta.maxPlayers} 人）囉！`);
+      return window.PartyDB.withLock(`join_${tableId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        if (!ctx.me) return;
+        const existingActive = this.getMyActiveTable(ctx.me.id, ctx.tables);
+        if (existingActive && existingActive.id !== tableId) {
+          window.PartyApp.toast(
+            `⚔️ 你已經在【${existingActive.title}】參賽中，一次只能參加一個遊戲喔！`
+          );
+          return;
+        }
+
+        const g = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}) };
+        let abortReason = "";
+        let maxP = 8;
+
+        const tx = await window.PartyDB.transactRow("tables", tableId, (cur) => {
+          if (!cur || cur.status !== "open") {
+            abortReason = "closed";
+            return undefined;
+          }
+          const gameMeta = CFG.PARTY_GAMES.find((x) => x.id === cur.game_type) || CFG.PARTY_GAMES[0];
+          maxP = gameMeta.maxPlayers;
+          const parts = [...(cur.participants || [])];
+          if (parts.some((p) => p.id === ctx.me.id)) {
+            abortReason = "already";
+            return undefined;
+          }
+          if (parts.length >= gameMeta.maxPlayers) {
+            abortReason = "full";
+            return undefined;
+          }
+          const usage = window.PartyEngine.getDailyGameUsage(
+            ctx.me.id,
+            cur.game_type,
+            cur.day_key,
+            ctx.tables,
+            ctx.bets
+          );
+          const isScoring = cur.is_test_run
+            ? false
+            : usage.playCount < g.maxScoringPlaysPerGamePerDay;
+          const reqStake = Number(cur.stake) || 20;
+          const myScore = ctx.scoreboard.byId[ctx.me.id]?.baseScore || 0;
+          if (isScoring && myScore < reqStake) {
+            abortReason = `low_pt:${reqStake}`;
+            return undefined;
+          }
+
+          let team = "";
+          let teamLabel = "";
+          if (cur.game_type === "soul_sync_2v2") {
+            const cntA = parts.filter((p) => p.team === "team_A").length;
+            team = cntA < 2 ? "team_A" : "team_B";
+            teamLabel = team === "team_A" ? "A組" : "B組";
+          }
+          parts.push({ id: ctx.me.id, name: ctx.me.name, isScoring, team, teamLabel });
+          cur.participants = parts;
+          return cur;
+        });
+
+        if (!tx.committed) {
+          if (abortReason === "full") {
+            window.PartyApp.toast(`此賽桌已滿員（最多 ${maxP} 人）囉！`);
+          } else if (abortReason === "closed") {
+            window.PartyApp.toast("此賽桌已經開戰或關閉囉！");
+          } else if (abortReason.startsWith("low_pt:")) {
+            const req = abortReason.split(":")[1];
+            window.PartyApp.toast(
+              `💰 目前積分不足 ${req} PT！可等明早 08:00 自動補滿回 ${g.dailyFloorPoints || 300} PT！`
+            );
+          } else if (abortReason === "already") {
+            this.activeRoomTableId = tableId;
+            this.minimizedRoomIds.delete(tableId);
+          }
+          await window.PartyApp.refreshAll();
+          return;
+        }
+
+        this.activeRoomTableId = tableId;
+        this.minimizedRoomIds.delete(tableId);
+        window.PartyFX.haptic("medium");
         await window.PartyApp.refreshAll();
-        return;
-      }
-      const g = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}) };
-      const usage = window.PartyEngine.getDailyGameUsage(
-        ctx.me.id,
-        table.game_type,
-        table.day_key,
-        ctx.tables,
-        ctx.bets
-      );
-      const isScoring = table.is_test_run
-        ? false
-        : usage.playCount < g.maxScoringPlaysPerGamePerDay;
-      const reqStake = Number(table.stake) || 20;
-      const myScore = ctx.scoreboard.byId[ctx.me.id]?.baseScore || 0;
-      if (isScoring && myScore < reqStake) {
-        window.PartyApp.toast(`💰 目前積分不足 ${reqStake} PT！可等明早 08:00 自動補滿回 300 PT！`);
-        return;
-      }
-
-      let team = "";
-      let teamLabel = "";
-      if (table.game_type === "soul_sync_2v2") {
-        const cntA = parts.filter((p) => p.team === "team_A").length;
-        team = cntA < 2 ? "team_A" : "team_B";
-        teamLabel = team === "team_A" ? "A組" : "B組";
-      }
-
-      parts.push({ id: ctx.me.id, name: ctx.me.name, isScoring, team, teamLabel });
-      await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(tableId)}`, {
-        participants: parts,
       });
-      window.PartyFX.haptic("medium");
-      await window.PartyApp.refreshAll();
     },
 
     async swapMyTeam(tableId) {
-      const ctx = window.PartyApp.getContext();
-      const table = (ctx.tables || []).find((t) => t.id === tableId);
-      if (!table || table.status !== "open") return;
-      const parts = (table.participants || []).map((p) => {
-        if (p.id !== ctx.me.id) return p;
-        if (table.game_type === "soul_sync_2v2") {
-          const next = p.team === "team_A" ? "team_B" : "team_A";
-          return { ...p, team: next, teamLabel: next === "team_A" ? "A組" : "B組" };
+      return window.PartyDB.withLock(`swap_${tableId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        if (!ctx.me) return;
+        const tx = await window.PartyDB.transactRow("tables", tableId, (cur) => {
+          if (!cur || cur.status !== "open") return undefined;
+          cur.participants = (cur.participants || []).map((p) => {
+            if (p.id !== ctx.me.id) return p;
+            if (cur.game_type === "soul_sync_2v2") {
+              const next = p.team === "team_A" ? "team_B" : "team_A";
+              return { ...p, team: next, teamLabel: next === "team_A" ? "A組" : "B組" };
+            }
+            return p;
+          });
+          return cur;
+        });
+        if (tx.committed) {
+          window.PartyFX.haptic("medium");
+          await window.PartyApp.refreshAll();
         }
-        return p;
       });
-      await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(tableId)}`, {
-        participants: parts,
-      });
-      window.PartyFX.haptic("medium");
-      await window.PartyApp.refreshAll();
     },
 
     async leaveTable(tableId) {
-      const ctx = window.PartyApp.getContext();
-      const table = (ctx.tables || []).find((t) => t.id === tableId);
-      if (!table || table.status !== "open") return;
-      const parts = (table.participants || []).filter((p) => p.id !== ctx.me.id);
-      await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(tableId)}`, {
-        participants: parts,
+      return window.PartyDB.withLock(`leave_${tableId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        if (!ctx.me) return;
+        if (this.activeRoomTableId === tableId) this.activeRoomTableId = null;
+        await window.PartyDB.transactRow("tables", tableId, (cur) => {
+          if (!cur || cur.status !== "open") return undefined;
+          cur.participants = (cur.participants || []).filter((p) => p.id !== ctx.me.id);
+          return cur;
+        });
+        await window.PartyApp.refreshAll();
       });
-      await window.PartyApp.refreshAll();
     },
 
     async cancelTable(tableId) {
@@ -1256,194 +1644,189 @@
     },
 
     async placeBet(tableId, pickKey, pickLabel) {
-      const ctx = window.PartyApp.getContext();
-      const table = (ctx.tables || []).find((t) => t.id === tableId);
-      if (!table || table.status !== "open" || table.is_test_run) return;
-      const g = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}) };
-      const usage = window.PartyEngine.getDailyGameUsage(
-        ctx.me.id,
-        table.game_type,
-        table.day_key,
-        ctx.tables,
-        ctx.bets
-      );
-      if (usage.betCount >= g.maxBetsPerGamePerDay) {
-        window.PartyApp.toast(`此遊戲今日場邊下注已達上限 ${g.maxBetsPerGamePerDay} 次！`);
-        return;
-      }
-      const myScore = ctx.scoreboard.byId[ctx.me.id]?.baseScore || 0;
-      const amt = Number(table.bet_stake) || 10;
-      if (myScore < amt) {
-        window.PartyApp.toast(`目前積分不足 ${amt} PT！`);
-        return;
-      }
+      return window.PartyDB.withLock(`bet_${tableId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        const table = (ctx.tables || []).find((t) => t.id === tableId);
+        if (!table || table.status !== "open" || table.is_test_run) return;
+        const g = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}) };
+        const usage = window.PartyEngine.getDailyGameUsage(
+          ctx.me.id,
+          table.game_type,
+          table.day_key,
+          ctx.tables,
+          ctx.bets
+        );
+        if (usage.betCount >= g.maxBetsPerGamePerDay) {
+          window.PartyApp.toast(`此遊戲今日場邊下注已達上限 ${g.maxBetsPerGamePerDay} 次！`);
+          return;
+        }
+        const myScore = ctx.scoreboard.byId[ctx.me.id]?.baseScore || 0;
+        const amt = Number(table.bet_stake) || 10;
+        if (myScore < amt) {
+          window.PartyApp.toast(`目前積分不足 ${amt} PT！`);
+          return;
+        }
 
-      const betId = `bet_${tableId}_${ctx.me.id}`;
-      const inserted = await window.PartyDB.upsert(
-        "bets",
-        [
-          {
-            id: betId,
-            table_id: tableId,
-            game_type: table.game_type,
-            day_key: table.day_key,
-            bettor_id: ctx.me.id,
-            pick_key: pickKey,
-            pick_label: pickLabel,
-            amount: amt,
-            status: "locked",
-            payout: 0,
-          },
-        ],
-        { ignoreDuplicates: true }
-      );
-      if (inserted && inserted.length > 0) {
-        await window.PartyDB.upsert(
-          "ledger",
+        const betId = `bet_${tableId}_${ctx.me.id}`;
+        const inserted = await window.PartyDB.upsert(
+          "bets",
           [
             {
-              id: `stake_${betId}`,
-              player_id: ctx.me.id,
-              delta: -amt,
-              category: "bet_stake",
-              reason: `🎲 場邊押注【${table.title}】(${pickLabel})`,
+              id: betId,
+              table_id: tableId,
+              game_type: table.game_type,
               day_key: table.day_key,
-              meta: { tableId, pickKey },
+              bettor_id: ctx.me.id,
+              pick_key: pickKey,
+              pick_label: pickLabel,
+              amount: amt,
+              status: "locked",
+              payout: 0,
             },
           ],
           { ignoreDuplicates: true }
         );
-      }
-      window.PartyFX.haptic("medium");
-      await window.PartyApp.refreshAll();
-    },
-
-    async startTable(tableId) {
-      const ctx = window.PartyApp.getContext();
-      const table = (ctx.tables || []).find((t) => t.id === tableId);
-      if (!table || table.status !== "open") return;
-      const banks = ctx.questionBanks || window.DEFAULT_QUESTION_BANKS;
-      const parts = [...(table.participants || [])];
-
-      const gameMeta = CFG.PARTY_GAMES.find((x) => x.id === table.game_type) || CFG.PARTY_GAMES[0];
-      if (parts.length < gameMeta.minPlayers) {
-        window.PartyApp.toast(`至少需要 ${gameMeta.minPlayers} 位選手才能開賽喔！`);
-        return;
-      }
-      if (table.game_type === "soul_sync_2v2" && parts.length !== 2 && parts.length !== 4) {
-        window.PartyApp.toast("🤝 靈魂默契需為「2 人合作」或「4 人雙組 2v2 對抗」才能開賽喔！");
-        return;
-      }
-      if (table.game_type === "soul_sync_2v2" && parts.length === 2) {
-        parts.forEach((p) => {
-          p.team = "team_A";
-          p.teamLabel = "合作組";
-        });
-      }
-      if (table.game_type === "soul_sync_2v2" && parts.length === 4) {
-        const cntA = parts.filter((p) => p.team === "team_A").length;
-        const cntB = parts.filter((p) => p.team === "team_B").length;
-        if (cntA !== 2 || cntB !== 2) {
-          window.PartyApp.toast("🤝 4人對抗需 A組 與 B組 各 2 人喔！（點擊自己名字旁的組別即可切換）");
-          return;
-        }
-      }
-
-      // 扣除計分參賽者的入場費 (純娛樂第4次+玩家不扣分！)
-      for (const p of parts) {
-        if (p.isScoring) {
+        if (inserted && inserted.length > 0) {
           await window.PartyDB.upsert(
             "ledger",
             [
               {
-                id: `play_stake_${table.id}_${p.id}`,
-                player_id: p.id,
-                delta: -(Number(table.stake) || 20),
-                category: "party_stake",
-                reason: `⚔️ 參賽入場費【${table.title}】`,
+                id: `stake_${betId}`,
+                player_id: ctx.me.id,
+                delta: -amt,
+                category: "bet_stake",
+                reason: `🎲 場邊押注【${table.title}】(${pickLabel})`,
                 day_key: table.day_key,
-                meta: { tableId: table.id, gameType: table.game_type },
+                meta: { tableId, pickKey },
               },
             ],
             { ignoreDuplicates: true }
           );
         }
-      }
+        window.PartyFX.haptic("medium");
+        await window.PartyApp.refreshAll();
+      });
+    },
 
-      // 初始化各遊戲專屬起始狀態
-      const initGs = {};
-      if (table.game_type === "quick_draw") {
-        initGs.mode = "draw";
-        initGs.roundSeq = 1;
-        initGs.ready = {};
-        parts.forEach((p) => {
-          if (String(p.id).startsWith("bot_")) initGs.ready[p.id] = true;
-        });
-        initGs.times = {};
-      } else if (table.game_type === "number_bomb") {
-        initGs.low = 0;
-        initGs.high = 100;
-        const salt = window.PartyEngine.cryptoRandomInt(10000, 99999);
-        const secret = window.PartyEngine.cryptoRandomInt(1, 99);
-        initGs.salt = salt;
-        initGs.secretMask = secret ^ salt;
-        const humans = window.PartyEngine.shuffle(
-          parts.filter((p) => !String(p.id).startsWith("bot_")).map((p) => p.id)
-        );
-        const bots = parts.filter((p) => String(p.id).startsWith("bot_")).map((p) => p.id);
-        initGs.aliveIds = [...humans, ...bots];
-        initGs.turnIdx = 0;
-      } else if (table.game_type === "rps_king") {
-        initGs.wins = {};
-        initGs.moves = {};
-        initGs.roundSeq = 1;
-      } else if (table.game_type === "soul_sync_2v2") {
-        // 尊重玩家自選搭檔組別；若組別人數不合規（如 2人合作局或 4人並非 2v2）則自動配平
-        if (parts.length === 2) {
-          parts.forEach((p) => {
-            p.team = "team_A";
-            p.teamLabel = "A組";
-          });
-        } else {
-          const cntA = parts.filter((p) => p.team === "team_A").length;
-          const cntB = parts.filter((p) => p.team === "team_B").length;
-          if (cntA !== 2 || cntB !== 2) {
-            parts.forEach((p, idx) => {
-              p.team = idx < 2 ? "team_A" : "team_B";
-              p.teamLabel = p.team === "team_A" ? "A組" : "B組";
+    async startTable(tableId) {
+      return window.PartyDB.withLock(`start_${tableId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        const banks = ctx.questionBanks || window.DEFAULT_QUESTION_BANKS;
+        let errMsg = "";
+
+        const tx = await window.PartyDB.transactRow("tables", tableId, (cur) => {
+          if (!cur || cur.status !== "open") return undefined;
+          const parts = [...(cur.participants || [])];
+          const gameMeta = CFG.PARTY_GAMES.find((x) => x.id === cur.game_type) || CFG.PARTY_GAMES[0];
+          if (parts.length < gameMeta.minPlayers) {
+            errMsg = `至少需要 ${gameMeta.minPlayers} 位選手才能開賽喔！`;
+            return undefined;
+          }
+          if (cur.game_type === "soul_sync_2v2" && parts.length !== 2 && parts.length !== 4) {
+            errMsg = "🤝 靈魂默契需為「2 人合作」或「4 人雙組 2v2 對抗」才能開賽喔！";
+            return undefined;
+          }
+          if (cur.game_type === "soul_sync_2v2" && parts.length === 2) {
+            parts.forEach((p) => {
+              p.team = "team_A";
+              p.teamLabel = "合作組";
             });
           }
-        }
-        initGs.questions = window.PartyEngine.shuffle(banks.soulSync2v2).slice(0, 8);
-        initGs.qIdx = 0;
-        initGs.answers = {};
-        initGs.scores = { team_A: 0, team_B: 0 };
-      } else if (table.game_type === "ito_numbers") {
-        const pool = Array.from({ length: 100 }, (_, i) => i + 1);
-        const picked = window.PartyEngine.shuffle(pool).slice(0, parts.length);
-        initGs.secretNumbers = {};
-        parts.forEach((p, idx) => {
-          initGs.secretNumbers[p.id] = picked[idx];
-        });
-        initGs.theme = window.PartyEngine.shuffle(banks.itoThemes)[0];
-        initGs.proposedOrder = parts.map((p) => p.id);
-        initGs.revealed = false;
-      } else if (table.game_type === "five_seconds") {
-        initGs.turn = 0;
-        initGs.scores = {};
-        initGs.prompts = window.PartyEngine
-          .shuffle(banks.fiveSeconds)
-          .slice(0, parts.length * 3 + 4)
-          .map((x) => x.prompt);
-      }
+          if (cur.game_type === "soul_sync_2v2" && parts.length === 4) {
+            const cntA = parts.filter((p) => p.team === "team_A").length;
+            const cntB = parts.filter((p) => p.team === "team_B").length;
+            if (cntA !== 2 || cntB !== 2) {
+              errMsg = "🤝 4人對抗需 A組 與 B組 各 2 人喔！（點擊自己名字旁的組別即可切換）";
+              return undefined;
+            }
+          }
 
-      await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(tableId)}`, {
-        status: "playing",
-        participants: parts,
-        game_state: initGs,
+          const initGs = {};
+          if (cur.game_type === "quick_draw") {
+            initGs.mode = "draw";
+            initGs.roundSeq = 1;
+            initGs.ready = {};
+            parts.forEach((p) => {
+              if (String(p.id).startsWith("bot_")) initGs.ready[p.id] = true;
+            });
+            initGs.times = {};
+          } else if (cur.game_type === "number_bomb") {
+            initGs.low = 0;
+            initGs.high = 100;
+            const salt = window.PartyEngine.cryptoRandomInt(10000, 99999);
+            const secret = window.PartyEngine.cryptoRandomInt(1, 99);
+            initGs.salt = salt;
+            initGs.secretMask = secret ^ salt;
+            const humans = window.PartyEngine.shuffle(
+              parts.filter((p) => !String(p.id).startsWith("bot_")).map((p) => p.id)
+            );
+            const bots = parts.filter((p) => String(p.id).startsWith("bot_")).map((p) => p.id);
+            initGs.aliveIds = [...humans, ...bots];
+            initGs.turnIdx = 0;
+          } else if (cur.game_type === "rps_king") {
+            initGs.wins = {};
+            initGs.moves = {};
+            initGs.roundSeq = 1;
+          } else if (cur.game_type === "soul_sync_2v2") {
+            initGs.questions = window.PartyEngine.shuffle(banks.soulSync2v2).slice(0, 8);
+            initGs.qIdx = 0;
+            initGs.answers = {};
+            initGs.scores = { team_A: 0, team_B: 0 };
+          } else if (cur.game_type === "ito_numbers") {
+            const pool = Array.from({ length: 100 }, (_, i) => i + 1);
+            const picked = window.PartyEngine.shuffle(pool).slice(0, parts.length);
+            initGs.secretNumbers = {};
+            parts.forEach((p, idx) => {
+              initGs.secretNumbers[p.id] = picked[idx];
+            });
+            initGs.theme = window.PartyEngine.shuffle(banks.itoThemes)[0];
+            initGs.proposedOrder = parts.map((p) => p.id);
+            initGs.revealed = false;
+          } else if (cur.game_type === "five_seconds") {
+            initGs.turn = 0;
+            initGs.scores = {};
+            initGs.prompts = window.PartyEngine
+              .shuffle(banks.fiveSeconds)
+              .slice(0, parts.length * 3 + 4)
+              .map((x) => x.prompt);
+          }
+
+          cur.status = "playing";
+          cur.participants = parts;
+          cur.game_state = initGs;
+          return cur;
+        });
+
+        if (!tx.committed) {
+          if (errMsg) window.PartyApp.toast(errMsg);
+          return;
+        }
+
+        const startedTbl = tx.snapshot;
+        // 扣除計分參賽者的入場費（冪等鍵防重複扣款，純陪玩第4次+玩家不扣分！）
+        for (const p of startedTbl.participants || []) {
+          if (p.isScoring) {
+            await window.PartyDB.upsert(
+              "ledger",
+              [
+                {
+                  id: `play_stake_${startedTbl.id}_${p.id}`,
+                  player_id: p.id,
+                  delta: -(Number(startedTbl.stake) || 20),
+                  category: "party_stake",
+                  reason: `⚔️ 參賽入場費【${startedTbl.title}】`,
+                  day_key: startedTbl.day_key,
+                  meta: { tableId: startedTbl.id, gameType: startedTbl.game_type },
+                },
+              ],
+              { ignoreDuplicates: true }
+            );
+          }
+        }
+
+        window.PartyFX.playTone("bell");
+        await window.PartyApp.refreshAll();
       });
-      window.PartyFX.playTone("bell");
-      await window.PartyApp.refreshAll();
     },
 
     // --- 2～16 人 手機毫秒決鬥 (西部拔槍 & 盲按 10.000s，獨立資料列防併發覆蓋！) ---
@@ -2053,44 +2436,57 @@
       await window.PartyApp.refreshAll();
     },
 
-    // --- 手動申報與對手互認 ---
+    // --- 手動申報與對手互認（CAS 樂觀鎖防併發互蓋） ---
     async proposeWinner(tableId, winnerIds) {
-      const ctx = window.PartyApp.getContext();
-      const table = (ctx.tables || []).find((t) => t.id === tableId);
-      if (table && (table.participants || []).some((p) => String(p.id).startsWith("bot_"))) {
-        return await this.autoFinishTable(table, winnerIds, ctx);
-      }
-      await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(tableId)}`, {
-        status: "settling",
-        proposed_winners: winnerIds,
-        confirmed_by: [ctx.me.id],
+      return window.PartyDB.withLock(`propose_${tableId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        const table = (ctx.tables || []).find((t) => t.id === tableId);
+        if (table && (table.participants || []).some((p) => String(p.id).startsWith("bot_"))) {
+          return await this.autoFinishTable(table, winnerIds, ctx);
+        }
+        await window.PartyDB.transactRow("tables", tableId, (cur) => {
+          if (!cur || cur.status === "finished" || cur.status === "cancelled") return undefined;
+          cur.status = "settling";
+          cur.proposed_winners = winnerIds;
+          cur.confirmed_by = [ctx.me.id];
+          return cur;
+        });
+        await window.PartyApp.refreshAll();
       });
-      await window.PartyApp.refreshAll();
     },
 
     async resetProposal(tableId) {
-      await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(tableId)}`, {
-        status: "playing",
-        proposed_winners: null,
-        confirmed_by: [],
+      return window.PartyDB.withLock(`reset_prop_${tableId}`, async () => {
+        await window.PartyDB.transactRow("tables", tableId, (cur) => {
+          if (!cur || cur.status !== "settling") return undefined;
+          cur.status = "playing";
+          cur.proposed_winners = null;
+          cur.confirmed_by = [];
+          return cur;
+        });
+        await window.PartyApp.refreshAll();
       });
-      await window.PartyApp.refreshAll();
     },
 
     async confirmWinner(tableId) {
-      const ctx = window.PartyApp.getContext();
-      const table = (ctx.tables || []).find((t) => t.id === tableId);
-      if (!table || !table.proposed_winners) return;
-      const confirmed = new Set(table.confirmed_by || []);
-      confirmed.add(ctx.me.id);
-      if (confirmed.size >= 2 || (table.participants || []).length <= 1) {
-        await this.autoFinishTable(table, table.proposed_winners, ctx);
-      } else {
-        await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(tableId)}`, {
-          confirmed_by: [...confirmed],
+      return window.PartyDB.withLock(`confirm_win_${tableId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        let readyToSettle = false;
+        const tx = await window.PartyDB.transactRow("tables", tableId, (cur) => {
+          if (!cur || cur.status === "finished" || !cur.proposed_winners) return undefined;
+          const confirmed = new Set(cur.confirmed_by || []);
+          confirmed.add(ctx.me.id);
+          cur.confirmed_by = [...confirmed];
+          readyToSettle = confirmed.size >= 2 || (cur.participants || []).length <= 1;
+          return cur;
         });
-        await window.PartyApp.refreshAll();
-      }
+        if (!tx.committed || !tx.snapshot) return;
+        if (readyToSettle) {
+          await this.autoFinishTable(tx.snapshot, tx.snapshot.proposed_winners, ctx);
+        } else {
+          await window.PartyApp.refreshAll();
+        }
+      });
     },
 
     async autoFinishTable(table, winnerIds, ctx) {

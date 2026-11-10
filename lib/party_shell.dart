@@ -82,6 +82,7 @@ class RealPartyWebSession implements PartyWebSession {
 class RealPartyNativeAdapter implements PartyNativeAdapter {
   final FlutterLocalNotificationsPlugin notifications;
   LocalAssetServer? _assetServer;
+  Future<void>? _permInFlight;
 
   RealPartyNativeAdapter(this.notifications);
 
@@ -103,18 +104,29 @@ class RealPartyNativeAdapter implements PartyNativeAdapter {
     }
   }
 
+  Future<void> _doRequestNotificationPermission() async {
+    try {
+      await notifications
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >()
+          ?.requestPermissions(alert: true, badge: true, sound: true);
+    } catch (_) {}
+    try {
+      await notifications
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.requestNotificationsPermission();
+    } catch (_) {}
+  }
+
   @override
   Future<void> requestNotificationPermission() async {
-    await notifications
-        .resolvePlatformSpecificImplementation<
-          IOSFlutterLocalNotificationsPlugin
-        >()
-        ?.requestPermissions(alert: true, badge: true, sound: true);
-    await notifications
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.requestNotificationsPermission();
+    _permInFlight ??= _doRequestNotificationPermission().whenComplete(() {
+      _permInFlight = null;
+    });
+    await _permInFlight;
   }
 
   @override
@@ -131,6 +143,8 @@ class RealPartyNativeAdapter implements PartyNativeAdapter {
     );
     const iosDetails = DarwinNotificationDetails(
       presentAlert: true,
+      presentBanner: true,
+      presentList: true,
       presentBadge: true,
       presentSound: true,
     );

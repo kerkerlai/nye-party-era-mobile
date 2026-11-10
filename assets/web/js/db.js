@@ -199,6 +199,7 @@
   }
 
   let clockOffsetMs = 0;
+  const _inFlightLocks = new Set();
 
   const PartyDB = {
     get isFirebase() {
@@ -213,6 +214,17 @@
     baseUrl,
     get serverNowMs() {
       return Date.now() + clockOffsetMs;
+    },
+
+    // 防連點／同客戶端併發互撞保護鎖（避免玩家手滑連點兩下按鈕重複送出！）
+    async withLock(lockKey, asyncFn) {
+      if (_inFlightLocks.has(lockKey)) return null;
+      _inFlightLocks.add(lockKey);
+      try {
+        return await asyncFn();
+      } finally {
+        _inFlightLocks.delete(lockKey);
+      }
     },
 
     getDeviceId() {
@@ -299,14 +311,24 @@
             rows.map(async (raw) => {
               const prepared = prepareRowForFirebase(table, raw);
               const fbKey = encodeFbKey(prepared[pk]);
-              const chk = await fetch(`${fbUrl}/${table}/${fbKey}.json`, { cache: "no-store" });
+              const chk = await fetch(`${fbUrl}/${table}/${fbKey}.json`, {
+                headers: { "X-Firebase-ETag": "true" },
+                cache: "no-store",
+              });
+              const etag = chk.headers ? chk.headers.get("ETag") : null;
               const existing = chk.ok ? await chk.json() : null;
               if (existing !== null && existing !== undefined) return;
+              const putHeaders = { "Content-Type": "application/json" };
+              if (etag) putHeaders["If-Match"] = etag;
               const putRes = await fetch(`${fbUrl}/${table}/${fbKey}.json`, {
                 method: "PUT",
-                headers: { "Content-Type": "application/json" },
+                headers: putHeaders,
                 body: JSON.stringify(prepared),
               });
+              if (putRes.status === 412) {
+                // 另一台手機在同毫秒搶先寫入相同冪等鍵，安全略過不報錯！
+                return;
+              }
               if (!putRes.ok) {
                 throw new Error(`Firebase PUT ${table}/${fbKey} failed (${putRes.status})`);
               }
@@ -448,6 +470,73 @@
         throw new Error(`delete ${table} failed (${res.status}): ${txt}`);
       }
       return true;
+    },
+
+    // 🔒 商用級多人同時按壓 CAS 樂觀鎖交易 (X-Firebase-ETag + If-Match 412 自動重試)
+    // 確保 10 台手機同毫秒搶進 3 人房、同時加入主題房、同時按互認結算時 100% 不掉資料、不超收！
+    async transactRow(table, keyVal, mutatorFn) {
+      const pk = table === "config" ? "key" : "id";
+      const fbUrl = getFirebaseUrl();
+      if (fbUrl) {
+        const fbKey = encodeFbKey(keyVal);
+        for (let attempt = 0; attempt < 10; attempt++) {
+          const chk = await fetch(`${fbUrl}/${table}/${fbKey}.json`, {
+            headers: { "X-Firebase-ETag": "true" },
+            cache: "no-store",
+          });
+          if (!chk.ok) throw new Error(`Firebase transact GET ${table}/${fbKey} failed (${chk.status})`);
+          const etag = chk.headers ? chk.headers.get("ETag") : null;
+          const rawCur = await chk.json();
+          const cur = rawCur ? normalizeFirebaseRow(table, rawCur) : null;
+          const draft = cur ? JSON.parse(JSON.stringify(cur)) : null;
+          const next = mutatorFn(draft);
+          if (next === undefined) {
+            return { committed: false, snapshot: cur };
+          }
+          const nowIso = new Date().toISOString();
+          let bodyVal = null;
+          if (next !== null) {
+            bodyVal = prepareRowForFirebase(table, next);
+            if (table === "tables" || table === "config" || table === "players" || table === "theme_sessions") {
+              bodyVal.updated_at = nowIso;
+            }
+          }
+          const putHeaders = { "Content-Type": "application/json" };
+          if (etag) putHeaders["If-Match"] = etag;
+          const putRes = await fetch(`${fbUrl}/${table}/${fbKey}.json`, {
+            method: "PUT",
+            headers: putHeaders,
+            body: JSON.stringify(bodyVal),
+          });
+          if (putRes.status === 412) {
+            await new Promise((r) => setTimeout(r, 15 + Math.floor(Math.random() * 45)));
+            continue;
+          }
+          if (!putRes.ok) {
+            throw new Error(`Firebase transact PUT ${table}/${fbKey} failed (${putRes.status})`);
+          }
+          return {
+            committed: true,
+            snapshot: bodyVal ? normalizeFirebaseRow(table, bodyVal) : null,
+          };
+        }
+        throw new Error(`Firebase transact ${table}/${fbKey} exceeded max retries`);
+      }
+
+      // PostgREST / Local server fallback
+      const rows = await this.select(table, `${pk}=eq.${encodeURIComponent(keyVal)}`);
+      const cur = (rows && rows[0]) || null;
+      const draft = cur ? JSON.parse(JSON.stringify(cur)) : null;
+      const next = mutatorFn(draft);
+      if (next === undefined) {
+        return { committed: false, snapshot: cur };
+      }
+      if (next === null) {
+        await this.remove(table, `${pk}=eq.${encodeURIComponent(keyVal)}`);
+        return { committed: true, snapshot: null };
+      }
+      const saved = await this.upsert(table, [next]);
+      return { committed: true, snapshot: (saved && saved[0]) || next };
     },
 
     async uploadImage(file, folder = "uploads") {
@@ -762,12 +851,36 @@
     return audioCtx;
   }
 
+  let _fwAnimId = null;
+
   const PartyFX = {
+    isMuted() {
+      try {
+        return localStorage.getItem("nye_fx_muted") === "1";
+      } catch (_) {
+        return false;
+      }
+    },
+
+    toggleMute() {
+      const next = !this.isMuted();
+      try {
+        localStorage.setItem("nye_fx_muted", next ? "1" : "0");
+      } catch (_) {}
+      if (!next) {
+        this.unlockAudio();
+        this.playTone("bell");
+      }
+      return next;
+    },
+
     unlockAudio() {
+      if (this.isMuted()) return;
       ensureAudio();
     },
 
     playTone(type = "bell") {
+      if (this.isMuted()) return;
       try {
         const ctx = ensureAudio();
         if (!ctx) return;
@@ -793,6 +906,214 @@
           osc.stop(now + i * 0.09 + 0.34);
         });
       } catch (_) {}
+    },
+
+    // 🧨 喜慶跨年鞭炮霹靂啪啦聲 ＋ 煙火升空砲響 ＋ 新年五聲音階號角
+    playFirecrackers() {
+      this.haptic("heavy");
+      setTimeout(() => this.haptic("medium"), 220);
+      setTimeout(() => this.haptic("heavy"), 480);
+      setTimeout(() => this.haptic("medium"), 820);
+      if (this.isMuted()) return true;
+      try {
+        const ctx = ensureAudio();
+        if (!ctx) return true;
+        const now = ctx.currentTime;
+
+        // 1. 建立白噪音緩衝模擬清脆連珠鞭炮聲 (28 發隨機節奏爆竹)
+        const bufLen = Math.floor(ctx.sampleRate * 0.09);
+        const noiseBuf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+        const out = noiseBuf.getChannelData(0);
+        for (let i = 0; i < bufLen; i++) {
+          out[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.018));
+        }
+
+        for (let p = 0; p < 28; p++) {
+          const t = now + p * 0.068 + Math.random() * 0.035;
+          const src = ctx.createBufferSource();
+          src.buffer = noiseBuf;
+          const filter = ctx.createBiquadFilter();
+          filter.type = "bandpass";
+          filter.frequency.setValueAtTime(1400 + Math.random() * 2400, t);
+          filter.Q.setValueAtTime(1.1, t);
+          const gain = ctx.createGain();
+          gain.gain.setValueAtTime(0.28 + Math.random() * 0.16, t);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.075);
+          src.connect(filter);
+          filter.connect(gain);
+          gain.connect(ctx.destination);
+          src.start(t);
+          src.stop(t + 0.085);
+        }
+
+        // 2. 3 發高空煙火重低音開花砲響
+        [0.05, 0.65, 1.3].forEach((offset) => {
+          const t = now + offset;
+          const boom = ctx.createOscillator();
+          const bGain = ctx.createGain();
+          boom.type = "sine";
+          boom.frequency.setValueAtTime(160, t);
+          boom.frequency.exponentialRampToValueAtTime(38, t + 0.34);
+          bGain.gain.setValueAtTime(0.32, t);
+          bGain.gain.exponentialRampToValueAtTime(0.001, t + 0.36);
+          boom.connect(bGain);
+          bGain.connect(ctx.destination);
+          boom.start(t);
+          boom.stop(t + 0.38);
+        });
+
+        // 3. 喜慶新年五聲宮調號角旋律 (C5-D5-E5-G5-A5-C6)
+        const fanfare = [523.25, 587.33, 659.25, 783.99, 880, 1046.5];
+        fanfare.forEach((freq, idx) => {
+          const t = now + 0.18 + idx * 0.13;
+          const dur = idx === fanfare.length - 1 ? 0.65 : 0.22;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(freq, t);
+          gain.gain.setValueAtTime(0.2, t);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(t);
+          osc.stop(t + dur + 0.02);
+        });
+      } catch (_) {}
+      return true;
+    },
+
+    // 🎆 全螢幕繽紛跨年煙火 ＋ 紅包金幣雨粒子動畫引擎
+    launchFireworksShow(opts = {}) {
+      const canvas = document.getElementById("fx-canvas");
+      if (!canvas) return false;
+      const showRedPackets = opts.redPackets !== false;
+      const durationMs = Number(opts.durationMs) || 3800;
+
+      if (_fwAnimId) {
+        cancelAnimationFrame(_fwAnimId);
+        _fwAnimId = null;
+      }
+
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const resize = () => {
+        canvas.width = Math.floor(window.innerWidth * dpr);
+        canvas.height = Math.floor(window.innerHeight * dpr);
+      };
+      resize();
+      canvas.classList.remove("hidden");
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return false;
+
+      const palette = ["#fbbf24", "#fb7185", "#38bdf8", "#34d399", "#fde047", "#f472b6", "#c084fc"];
+      const sparks = [];
+      const floaters = [];
+
+      const spawnBurst = (cx, cy) => {
+        const count = 42;
+        const baseColor = palette[Math.floor(Math.random() * palette.length)];
+        for (let i = 0; i < count; i++) {
+          const ang = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.18;
+          const spd = (2.2 + Math.random() * 5.2) * dpr;
+          sparks.push({
+            x: cx,
+            y: cy,
+            vx: Math.cos(ang) * spd,
+            vy: Math.sin(ang) * spd,
+            alpha: 1,
+            decay: 0.014 + Math.random() * 0.012,
+            radius: (2.2 + Math.random() * 2.2) * dpr,
+            color: Math.random() < 0.3 ? "#fef08a" : baseColor,
+          });
+        }
+      };
+
+      const w = () => canvas.width;
+      const h = () => canvas.height;
+      spawnBurst(w() * 0.5, h() * 0.26);
+      const burstTimers = [260, 580, 950, 1380, 1850, 2350].map((delay) =>
+        setTimeout(() => {
+          spawnBurst(
+            w() * (0.18 + Math.random() * 0.64),
+            h() * (0.16 + Math.random() * 0.34)
+          );
+        }, delay)
+      );
+
+      if (showRedPackets) {
+        const icons = ["🧧", "🪙", "✨", "🧧", "🎉"];
+        for (let i = 0; i < 28; i++) {
+          floaters.push({
+            x: Math.random() * w(),
+            y: -Math.random() * h() * 0.8 - 20 * dpr,
+            vy: (2.3 + Math.random() * 2.8) * dpr,
+            vx: (Math.random() - 0.5) * 1.4 * dpr,
+            rot: Math.random() * Math.PI * 2,
+            vrot: (Math.random() - 0.5) * 0.07,
+            size: (20 + Math.random() * 12) * dpr,
+            icon: icons[i % icons.length],
+          });
+        }
+      }
+
+      const startTs = performance.now();
+      const step = (now) => {
+        const elapsed = now - startTs;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        for (let i = sparks.length - 1; i >= 0; i--) {
+          const p = sparks[i];
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += 0.09 * dpr;
+          p.vx *= 0.985;
+          p.alpha -= p.decay;
+          if (p.alpha <= 0) {
+            sparks.splice(i, 1);
+            continue;
+          }
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, p.alpha);
+          ctx.fillStyle = p.color;
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 8 * dpr;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        if (showRedPackets) {
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          for (const f of floaters) {
+            f.x += f.vx + Math.sin(elapsed * 0.004 + f.rot) * 0.5 * dpr;
+            f.y += f.vy;
+            f.rot += f.vrot;
+            if (elapsed < durationMs * 0.65 && f.y > canvas.height + 30 * dpr) {
+              f.y = -25 * dpr;
+              f.x = Math.random() * canvas.width;
+            }
+            ctx.save();
+            ctx.translate(f.x, f.y);
+            ctx.rotate(f.rot * 0.25);
+            ctx.font = `${Math.round(f.size)}px sans-serif`;
+            ctx.globalAlpha = elapsed > durationMs - 600 ? Math.max(0, (durationMs - elapsed) / 600) : 0.96;
+            ctx.fillText(f.icon, 0, 0);
+            ctx.restore();
+          }
+        }
+
+        if (elapsed < durationMs || sparks.length > 0) {
+          _fwAnimId = requestAnimationFrame(step);
+        } else {
+          burstTimers.forEach((tid) => clearTimeout(tid));
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          canvas.classList.add("hidden");
+          _fwAnimId = null;
+        }
+      };
+      _fwAnimId = requestAnimationFrame(step);
+      return true;
     },
 
     haptic(style = "medium") {
@@ -824,6 +1145,22 @@
           }
         }
       } catch (_) {}
+    },
+
+    async requestNotifyPermission() {
+      PartyFX.unlockAudio();
+      try {
+        if (window.NYEPartyBridge && window.NYEPartyBridge.postMessage) {
+          window.NYEPartyBridge.postMessage(
+            JSON.stringify({ type: "request_permission" })
+          );
+          return true;
+        }
+        if ("Notification" in window && Notification.permission === "default") {
+          await Notification.requestPermission();
+        }
+      } catch (_) {}
+      return true;
     },
 
     async requestPermissionAndTest() {

@@ -130,12 +130,43 @@
 
   const ThemeGamesUI = {
     selectedThemeToOpen: "share_2026_2027",
+    _lastSyncedSlotId: "",
     localShareOwnerPick: "",
     localShareFactPick: -1,
     localSliderVal: 50,
     checkedFigKeys: new Set(),
     figurineTimerHandle: null,
     nyeTimerHandle: null,
+
+    getDynamicThemeList(globalCfg) {
+      const g = { ...(window.PARTY_CONFIG?.DEFAULTS || {}), ...(globalCfg || {}) };
+      const evTitle = g.eventTitle || "跨年英雄紀元";
+      const lbA = g.shareLabelA || "2026 回顧";
+      const lbB = g.shareLabelB || "2027 展望";
+      const rpPts = Number(g.redPacketPoints) || 50;
+      return THEME_LIST.map((item) => {
+        if (item.id === "share_2026_2027") {
+          return {
+            ...item,
+            name: `${evTitle}・分享篇`,
+            sub: `${lbA} & ${lbB}兩輪盲猜 (+10/+20 PT，題主 +15 PT)`,
+            rules: [
+              `分兩輪進行：Round 1 猜大家預填的【${lbA}】，Round 2 猜【${lbB}】。`,
+              item.rules[1],
+              item.rules[2],
+            ],
+          };
+        }
+        if (item.id === "nye_red_packet") {
+          return {
+            ...item,
+            sub: `全場手機依排程時間同步煙火倒數，歸零解鎖開運紅包 (+${rpPts} PT)`,
+            scoring: [`🧧 點擊領取紅包的在場每位夥伴，人人固定入帳新年開運禮 +${rpPts} PT（每人限領 1 次）！`],
+          };
+        }
+        return item;
+      });
+    },
 
     toggleFigLineCheck(fullKey, checked) {
       if (checked) this.checkedFigKeys.add(fullKey);
@@ -174,7 +205,17 @@
     },
 
     renderStage(ctx) {
-      const { me, isGmUnlocked, themeSessions, sceneInfo } = ctx;
+      const { me, isGmUnlocked, themeSessions, sceneInfo, globalCfg } = ctx;
+      const dynThemes = this.getDynamicThemeList(globalCfg);
+      const slotId = sceneInfo.activeSlot?.id || "";
+      const slotTheme = sceneInfo.activeSlot?.themeType || "";
+      if (slotId && slotId !== this._lastSyncedSlotId) {
+        this._lastSyncedSlotId = slotId;
+        if (slotTheme && dynThemes.some((t) => t.id === slotTheme)) {
+          this.selectedThemeToOpen = slotTheme;
+        }
+      }
+
       // 若排程在跨年紅包時段且尚無開啟中的主題房，直接顯示跨年煙火紅包舞台
       const active = this.getActiveSession(themeSessions);
 
@@ -183,7 +224,7 @@
       }
 
       if (!active) {
-        const pickedMeta = THEME_LIST.find((t) => t.id === this.selectedThemeToOpen) || THEME_LIST[0];
+        const pickedMeta = dynThemes.find((t) => t.id === this.selectedThemeToOpen) || dynThemes[0];
         return `
           <div class="section-card" style="text-align:center;padding:22px 16px;">
             <div style="font-size:40px;margin-bottom:6px;">🎪</div>
@@ -194,13 +235,15 @@
                 ? `<div class="gm-host-launcher" style="margin-top:14px;text-align:left;">
                     <div class="sub-label">👑 GM Host 快速開房器（點選查看規則並開房）：</div>
                     <div class="create-game-list">
-                      ${THEME_LIST.map(
-                        (t) => `<div class="create-game-item ${this.selectedThemeToOpen === t.id ? "active" : ""}"
-                                   onclick="ThemeGamesUI.selectedThemeToOpen='${t.id}';PartyApp.render();">
-                          <b>${t.icon} ${esc(t.name)}</b>
-                          <div class="muted-xs">${esc(t.sub)}</div>
-                        </div>`
-                      ).join("")}
+                      ${dynThemes
+                        .map(
+                          (t) => `<div class="create-game-item ${this.selectedThemeToOpen === t.id ? "active" : ""}"
+                                     onclick="ThemeGamesUI.selectedThemeToOpen='${t.id}';PartyApp.render();">
+                            <b>${t.icon} ${esc(t.name)}</b>
+                            <div class="muted-xs">${esc(t.sub)}</div>
+                          </div>`
+                        )
+                        .join("")}
                     </div>
                     <div style="margin-top:10px;">
                       ${this.renderThemeRuleBox(pickedMeta, false)}
@@ -211,7 +254,7 @@
                   </div>`
                 : `<div class="muted-xs" style="margin:10px 0 12px;">（等待 Host 開啟本場主題房間…可先點下方預覽各主題遊戲規則與計分！）</div>
                    <div style="text-align:left;">
-                     ${THEME_LIST.map((t) => this.renderThemeRuleBox(t, true, false)).join("")}
+                     ${dynThemes.map((t) => this.renderThemeRuleBox(t, true, false)).join("")}
                    </div>`
             }
           </div>
@@ -220,7 +263,7 @@
 
       const isHost = active.host_id === me.id || isGmUnlocked;
       const joined = (active.participants || []).includes(me.id);
-      const meta = THEME_LIST.find((x) => x.id === active.theme_type) || THEME_LIST[0];
+      const meta = dynThemes.find((x) => x.id === active.theme_type) || dynThemes[0];
       const st = active.state || {};
       const isLobbyPhase =
         active.status === "lobby" ||
@@ -288,7 +331,10 @@
 
     // ==================== 1. 🌟 跨年英雄紀元・分享篇 ====================
     renderShareGame(session, ctx, isHost, playerMap) {
-      const { me, themeResponses } = ctx;
+      const { me, themeResponses, globalCfg } = ctx;
+      const g = { ...(window.PARTY_CONFIG?.DEFAULTS || {}), ...(globalCfg || {}) };
+      const lbA = g.shareLabelA || "2026 回顧";
+      const lbB = g.shareLabelB || "2027 展望";
       const st = session.state || {};
       const joinedPlayers = (session.participants || []).map((id) => playerMap[id]).filter(Boolean);
 
@@ -300,7 +346,7 @@
         return `
           <div class="mini-game-box">
             <div class="q-title">🌟 集合大廳（已入房 ${joinedPlayers.length} 人）</div>
-            <div class="muted-sm">2026 分享卡已填：${ready2026}/${joinedPlayers.length} ｜ 2027 展望卡已填：${ready2027}/${joinedPlayers.length}</div>
+            <div class="muted-sm">${esc(lbA)}卡已填：${ready2026}/${joinedPlayers.length} ｜ ${esc(lbB)}卡已填：${ready2027}/${joinedPlayers.length}</div>
             <div class="part-chips" style="margin:10px 0;">
               ${joinedPlayers
                 .map(
@@ -312,14 +358,14 @@
             </div>
             ${
               myMissing
-                ? `<div class="toast-inline">⚠️ 你還沒填完 2026 & 2027 分享卡！請切到下方「🏠 個人 Dashboard ➜ 行前分享卡」補填即可馬上參加！</div>`
+                ? `<div class="toast-inline">⚠️ 你還沒填完分享卡！請切到下方「🏠 個人主頁 ➜ 個人資料填寫」補填即可馬上參加！</div>`
                 : ""
             }
             ${
               isHost
                 ? `<div class="grid-2-btns" style="margin-top:12px;">
-                    <button class="btn btn-gold" onclick="ThemeGamesUI.startShareRound('${session.id}', '2026')">▶️ 啟動 Round 1 (猜 2026)</button>
-                    <button class="btn btn-primary" onclick="ThemeGamesUI.startShareRound('${session.id}', '2027')">▶️ 啟動 Round 2 (猜 2027)</button>
+                    <button class="btn btn-gold" onclick="ThemeGamesUI.startShareRound('${session.id}', '2026')">▶️ 啟動 Round 1 (${esc(lbA)})</button>
+                    <button class="btn btn-primary" onclick="ThemeGamesUI.startShareRound('${session.id}', '2027')">▶️ 啟動 Round 2 (${esc(lbB)})</button>
                   </div>`
                 : `<div class="muted-xs">等待 Host 啟動第一輪…</div>`
             }
@@ -333,10 +379,10 @@
       if (!cur) {
         return `
           <div class="mini-game-box" style="text-align:center;">
-            <h3>🎉 Round ${st.year === "2026" ? "1 (2026 回顧)" : "2 (2027 展望)"} 全數猜完啦！</h3>
+            <h3>🎉 Round ${st.year === "2026" ? `1 (${esc(lbA)})` : `2 (${esc(lbB)})`} 全數猜完啦！</h3>
             ${
               isHost && st.year === "2026"
-                ? `<button class="btn btn-gold" style="margin-top:12px;" onclick="ThemeGamesUI.startShareRound('${session.id}', '2027')">🚀 進入 Round 2：猜 2027 想完成的事！</button>`
+                ? `<button class="btn btn-gold" style="margin-top:12px;" onclick="ThemeGamesUI.startShareRound('${session.id}', '2027')">🚀 進入 Round 2：猜【${esc(lbB)}】！</button>`
                 : ""
             }
           </div>
@@ -357,7 +403,7 @@
       return `
         <div class="mini-game-box">
           <div class="ss-top">
-            <span class="badge-pill">Round ${st.year === "2026" ? "1：2026 年度故事" : "2：2027 新年願望"} (${idx + 1}/${items.length})</span>
+            <span class="badge-pill">Round ${st.year === "2026" ? `1：${esc(lbA)}` : `2：${esc(lbB)}`} (${idx + 1}/${items.length})</span>
             <span class="muted-xs">已鎖定：${resps.length}/${joinedPlayers.length} 人</span>
           </div>
           ${
@@ -1003,9 +1049,14 @@
               : `<div style="font-size:26px;font-weight:900;color:#fff;margin:8px 0;">🎉 HAPPY NEW YEAR！🎉</div>
                  ${
                    claimed
-                     ? `<div class="my-bet-tag" style="display:inline-block;padding:10px 18px;font-size:16px;">🧧 已領取新年開運紅包 +${pts} PT！新年快樂！</div>`
+                     ? `<div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+                          <div class="my-bet-tag" style="display:inline-block;padding:10px 18px;font-size:16px;">🧧 已領取新年開運紅包 +${pts} PT！新年快樂！</div>
+                          <button type="button" class="btn btn-secondary btn-xs" onclick="ThemeGamesUI.replayFireworks()">
+                            🎆 再放一次跨年煙火＆鞭炮慶祝！
+                          </button>
+                        </div>`
                      : `<button class="btn btn-redpacket" onclick="ThemeGamesUI.claimRedPacket()">
-                          🧧 點擊領取新年簽到紅包 (+${pts} PT)
+                          🧧 點擊拆開新年煙火大紅包 (+${pts} PT)
                         </button>`
                  }`
           }
@@ -1054,16 +1105,20 @@
     },
 
     async joinSession(sessionId) {
-      const ctx = window.PartyApp.getContext();
-      const s = (ctx.themeSessions || []).find((x) => x.id === sessionId);
-      if (!s) return;
-      const set = new Set(s.participants || []);
-      set.add(ctx.me.id);
-      await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
-        participants: [...set],
+      return window.PartyDB.withLock(`join_thm_${sessionId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        if (!ctx.me) return;
+        await window.PartyDB.transactRow("theme_sessions", sessionId, (cur) => {
+          if (!cur || cur.status === "finished") return undefined;
+          const set = new Set(cur.participants || []);
+          if (set.has(ctx.me.id)) return undefined;
+          set.add(ctx.me.id);
+          cur.participants = [...set];
+          return cur;
+        });
+        window.PartyFX.haptic("medium");
+        await window.PartyApp.refreshAll();
       });
-      window.PartyFX.haptic("medium");
-      await window.PartyApp.refreshAll();
     },
 
     async closeSession(sessionId) {
@@ -1535,7 +1590,9 @@
         "theme_responses",
         `session_id=eq.${encodeURIComponent(sessionId)}&step_key=eq.${encodeURIComponent(stepKey)}`
       );
-      const dayKey = ctx.globalCfg?.activeDayKey || "2027-01-02";
+      const dayKey =
+        ctx.globalCfg?.activeDayKey ||
+        window.PartyEngine.taipeiParts(window.PartyDB.serverNowMs).dateKey;
       const playerMap = {};
       (ctx.players || []).forEach((p) => (playerMap[p.id] = p));
 
@@ -1783,7 +1840,9 @@
         const winTeam = aWin ? st.teamA : st.teamB;
         const loseTeam = aWin ? st.teamB : st.teamA;
         st.winnerBanner = `${aWin ? "🅰️ A 隊" : "🅱️ B 隊"} 最快完成搜查獲勝！全隊每人 +100 PT ＆ 解鎖【神探夏洛克】！`;
-        const dayKey = ctx.globalCfg?.activeDayKey || "2027-01-01";
+        const dayKey =
+          ctx.globalCfg?.activeDayKey ||
+          window.PartyEngine.taipeiParts(window.PartyDB.serverNowMs).dateKey;
 
         for (const pid of winTeam) {
           await window.PartyDB.upsert(
@@ -1867,7 +1926,9 @@
       st.stageWinners[stageNo] = teamColor;
 
       const winners = teamColor === "red" ? st.redTeam : st.blueTeam;
-      const dayKey = ctx.globalCfg?.activeDayKey || "2027-01-02";
+      const dayKey =
+        ctx.globalCfg?.activeDayKey ||
+        window.PartyEngine.taipeiParts(window.PartyDB.serverNowMs).dateKey;
       const stageMeta = PHYSICAL_STAGES.find((x) => x.no === stageNo);
 
       for (const pid of winners || []) {
@@ -1922,28 +1983,45 @@
       await window.PartyApp.refreshAll();
     },
 
+    replayFireworks() {
+      window.PartyFX.playFirecrackers();
+      window.PartyFX.launchFireworksShow({ redPackets: true, durationMs: 3800 });
+    },
+
     async claimRedPacket() {
-      const ctx = window.PartyApp.getContext();
-      const g = { ...window.PARTY_CONFIG.DEFAULTS, ...(ctx.globalCfg || {}) };
-      const pts = Number(g.redPacketPoints) || 50;
-      await window.PartyDB.upsert(
-        "ledger",
-        [
-          {
-            id: `nye2027_redpacket_${ctx.me.id}`,
-            player_id: ctx.me.id,
-            delta: pts,
-            category: "red_packet",
-            reason: "🧧 2027 跨年午夜簽到開運紅包",
-            day_key: "2027-01-01",
-          },
-        ],
-        { ignoreDuplicates: true }
-      );
-      window.PartyFX.playTone("win");
-      window.PartyFX.haptic("heavy");
-      window.PartyApp.toast(`🧧 新年快樂！成功領取 +${pts} PT 開運紅包！`);
-      await window.PartyApp.refreshAll();
+      return window.PartyDB.withLock("claim_red_packet", async () => {
+        const ctx = window.PartyApp.getContext();
+        if (!ctx.me) return;
+        const g = { ...window.PARTY_CONFIG.DEFAULTS, ...(ctx.globalCfg || {}) };
+        const pts = Number(g.redPacketPoints) || 50;
+        const dayKey =
+          g.activeDayKey ||
+          window.PartyEngine.taipeiParts(window.PartyDB.serverNowMs).dateKey;
+        const inserted = await window.PartyDB.upsert(
+          "ledger",
+          [
+            {
+              id: `nye2027_redpacket_${ctx.me.id}`,
+              player_id: ctx.me.id,
+              delta: pts,
+              category: "red_packet",
+              reason: `🧧 《${g.eventTitle || "跨年英雄紀元"}》午夜簽到開運紅包`,
+              day_key: dayKey,
+            },
+          ],
+          { ignoreDuplicates: true }
+        );
+        // 播放喜慶霹靂啪啦鞭炮音效 ＋ 全螢幕繽紛煙火與紅包金幣雨 ＋ 紅包開獎賀卡！
+        window.PartyFX.playFirecrackers();
+        window.PartyFX.launchFireworksShow({ redPackets: true, durationMs: 4200 });
+        if (window.PartyApp.showRedPacketSplash) {
+          window.PartyApp.showRedPacketSplash(pts, g.eventTitle || "跨年英雄紀元");
+        } else {
+          window.PartyApp.toast(`🧧 新年快樂！成功領取 +${pts} PT 開運紅包！`);
+        }
+        await window.PartyApp.refreshAll();
+        return inserted;
+      });
     },
   };
 

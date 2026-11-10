@@ -121,11 +121,11 @@
 
           ${
             g.seasonStatus === "settled"
-              ? `<div class="my-bet-tag">🏆 已完成最終結算（Viewer 總榜公開模式）</div>`
+              ? `<div class="my-bet-tag">🏆 已完成最終結算（Viewer 頒獎典禮公開模式）</div>`
               : `<div style="margin-bottom:8px;">
                   <div class="muted-xs" style="margin-bottom:6px;">🙈 防劇透保護中：後台不顯示秘密大腿配對名單，讓你也能當玩家！（開賽時系統會自動配對；若有新夥伴中途加入可點此重抽）</div>
                   <button class="btn btn-secondary btn-xs" style="width:100%;" onclick="GMConsole.launchSeason()">
-                    🎲 重新洗牌配對全員秘密大腿／二腿 ＆ 補齊初始 300 PT（目前 ${players.length} 人）
+                    🎲 重新洗牌配對全員秘密大腿／二腿 ＆ 補齊初始 ${g.initialPoints || 300} PT（目前 ${players.length} 人）
                   </button>
                 </div>`
           }
@@ -197,15 +197,66 @@
         </div>
 
         <div class="section-card" style="margin-top:14px;">
-          <div class="section-title">⚖️ 全域注碼、通行 PIN 碼 ＆ 民宿資訊</div>
+          <div class="section-title">🏷️ 活動名稱與分享卡題目自訂（全站動態連動）</div>
+          <div style="margin-bottom:8px;">
+            <label class="sub-label">🎉 活動主標題（例如：跨年英雄紀元 / 宜蘭包棟爭霸戰）</label>
+            <input type="text" id="cfg-event-title" class="input-dark" value="${esc(g.eventTitle || "跨年英雄紀元")}">
+          </div>
+          <div class="grid-2-btns" style="margin-bottom:6px;">
+            <div>
+              <label class="sub-label">📘 分享卡 A 簡稱</label>
+              <input type="text" id="cfg-share-label-a" class="input-dark" value="${esc(g.shareLabelA || "2026 回顧")}">
+            </div>
+            <div>
+              <label class="sub-label">🚀 分享卡 B 簡稱</label>
+              <input type="text" id="cfg-share-label-b" class="input-dark" value="${esc(g.shareLabelB || "2027 展望")}">
+            </div>
+          </div>
+          <div style="margin-bottom:6px;">
+            <label class="sub-label">📘 分享卡 Part A 完整題目</label>
+            <input type="text" id="cfg-share-prompt-a" class="input-dark" value="${esc(g.sharePromptA || "2026 年最值得分享的一件事")}">
+          </div>
+          <div>
+            <label class="sub-label">🚀 分享卡 Part B 完整題目</label>
+            <input type="text" id="cfg-share-prompt-b" class="input-dark" value="${esc(g.sharePromptB || "2027 年最想完成的一件事")}">
+          </div>
+        </div>
+
+        <div class="section-card" style="margin-top:14px;">
+          <div class="section-title">⚖️ 全域注碼、經濟額度、PIN 碼 ＆ 民宿百寶箱</div>
+          <p class="muted-xs" style="margin-bottom:8px;">修改下方數值並儲存後，玩家前台所有規則文字、按鈕金額與結算邏輯將 <b>100% 即時同步更新</b>：</p>
           <div class="grid-2-btns">
             <div>
-              <label class="sub-label">賽桌參賽注碼 (PT)</label>
+              <label class="sub-label">⚔️ 賽桌參賽注碼 (PT)</label>
               <input type="number" id="cfg-play-stake" class="input-dark" value="${g.partyPlayStake}">
             </div>
             <div>
-              <label class="sub-label">場邊下注注碼 (PT)</label>
+              <label class="sub-label">💰 場邊下注注碼 (PT)</label>
               <input type="number" id="cfg-bet-stake" class="input-dark" value="${g.partyBetStake}">
+            </div>
+            <div>
+              <label class="sub-label">🎁 開賽初始積分 (PT)</label>
+              <input type="number" id="cfg-init-pts" class="input-dark" value="${g.initialPoints}">
+            </div>
+            <div>
+              <label class="sub-label">☀️ 08:00 低保回血線 (PT)</label>
+              <input type="number" id="cfg-floor-pts" class="input-dark" value="${g.dailyFloorPoints}">
+            </div>
+            <div>
+              <label class="sub-label">🎲 同款每日計分上限(次)</label>
+              <input type="number" id="cfg-max-plays" class="input-dark" value="${g.maxScoringPlaysPerGamePerDay}">
+            </div>
+            <div>
+              <label class="sub-label">🎯 同款每日下注上限(次)</label>
+              <input type="number" id="cfg-max-bets" class="input-dark" value="${g.maxBetsPerGamePerDay}">
+            </div>
+            <div>
+              <label class="sub-label">🕵️ 隱藏任務單張分數(PT)</label>
+              <input type="number" id="cfg-mission-pts" class="input-dark" value="${g.hiddenMissionPoints}">
+            </div>
+            <div>
+              <label class="sub-label">🧧 跨年紅包簽到分數(PT)</label>
+              <input type="number" id="cfg-redpacket-pts" class="input-dark" value="${g.redPacketPoints}">
             </div>
             <div>
               <label class="sub-label">🔑 玩家登入通行 PIN 碼</label>
@@ -216,19 +267,33 @@
               <input type="text" id="cfg-gm-pin" class="input-dark" value="${esc(g.gmPin || CFG.DEFAULT_GM_PIN)}">
             </div>
             <div>
-              <label class="sub-label">民宿 Wi-Fi 名稱</label>
+              <label class="sub-label">📶 民宿 Wi-Fi 名稱</label>
               <input type="text" id="cfg-wifi-ssid" class="input-dark" value="${esc(g.villaInfo?.wifiSsid || "")}">
             </div>
             <div>
-              <label class="sub-label">民宿 Wi-Fi 密碼</label>
+              <label class="sub-label">🔐 民宿 Wi-Fi 密碼</label>
               <input type="text" id="cfg-wifi-pass" class="input-dark" value="${esc(g.villaInfo?.wifiPass || "")}">
             </div>
           </div>
+          <div class="grid-2-btns" style="margin-top:8px;">
+            <div>
+              <label class="sub-label">🚪 大門電子鎖密碼</label>
+              <input type="text" id="cfg-door-code" class="input-dark" value="${esc(g.villaInfo?.doorCode || "")}" placeholder="例：1231#">
+            </div>
+            <div>
+              <label class="sub-label">🗺️ Google Maps 導航網址</label>
+              <input type="text" id="cfg-villa-map" class="input-dark" value="${esc(g.villaInfo?.mapUrl || "")}" placeholder="https://maps.app.goo.gl/...">
+            </div>
+          </div>
           <div style="margin-top:8px;">
-            <label class="sub-label">民宿地址 ／ 大門密碼備註</label>
+            <label class="sub-label">📍 民宿地址說明</label>
             <input type="text" id="cfg-villa-addr" class="input-dark" value="${esc(g.villaInfo?.address || "")}">
           </div>
-          <button class="btn btn-primary btn-sm" style="margin-top:10px;width:100%;" onclick="GMConsole.saveGlobalParams()">💾 儲存參數與民宿資訊</button>
+          <div style="margin-top:8px;">
+            <label class="sub-label">📢 民宿貼心公告提醒（顯示於玩家民宿卡下方）</label>
+            <input type="text" id="cfg-villa-notes" class="input-dark" value="${esc(g.villaInfo?.notes || "")}">
+          </div>
+          <button class="btn btn-primary btn-sm" style="margin-top:12px;width:100%;" onclick="GMConsole.saveGlobalParams()">💾 儲存所有活動參數與民宿資訊</button>
         </div>
 
         <div class="section-card" style="margin-top:14px;border-color:rgba(244,63,94,0.5);">
@@ -351,7 +416,7 @@
         return {
           player: p,
           total: scoreboard.byId[p.id]?.baseScore || 0,
-          initFloor: sumCat(["initial", "floor_topup"]),
+          initFloor: sumCat(["initial", "floor_topup", "topup"]),
           partyBet: sumCat(["party_stake", "party_win", "bet_stake", "bet_payout", "bet_refund"]),
           themeRed: sumCat(["theme", "red_packet"]),
           missionBadge: sumCat(["mission", "badge"]),
@@ -677,7 +742,7 @@
                   <div>
                     <b>${esc(p.name)}</b> ${p.is_gm ? `<span class="hh-tag">GM</span>` : ""}
                     <div class="muted-xs">
-                      2026卡:${ok26 ? "✅已填" : "⏳未填"} ｜ 2027卡:${ok27 ? "✅已填" : "⏳未填"} ｜ 推播:${p.push_tested ? "✅" : "⏳"}
+                      ${esc(g.shareLabelA || "2026")}卡:${ok26 ? "✅已填" : "⏳未填"} ｜ ${esc(g.shareLabelB || "2027")}卡:${ok27 ? "✅已填" : "⏳未填"} ｜ 推播:${p.push_tested ? "✅" : "⏳"}
                     </div>
                     <div class="muted-xs" style="margin-top:2px;">
                       裝置綁定：${
@@ -760,8 +825,21 @@
                 ${grp.items
                   .map(({ s, idx, sp, ep }) => {
                     const crossDay = ep.dateKey !== sp.dateKey ? ` (+1日 ${ep.mm}/${ep.dd})` : "";
+                    const themeChoices = (window.ThemeGamesUI?.THEME_LIST || []).filter(
+                      (x) => x.id !== "nye_red_packet"
+                    );
                     return `
                       <div class="sched-friendly-card">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:6px;">
+                          <span class="muted-xs" style="font-weight:700;">時段 #${idx + 1}</span>
+                          <div style="display:flex;gap:5px;">
+                            <button type="button" class="btn btn-secondary btn-xs" style="padding:3px 8px;font-size:11.5px;" onclick="GMConsole.insertScheduleSlotBefore(${idx})">
+                              ➕ 在此段上方插入時段
+                            </button>
+                            <button type="button" class="btn-icon" title="刪除此時段" onclick="GMConsole.deleteScheduleSlot(${idx})">🗑️</button>
+                          </div>
+                        </div>
+
                         <div class="time-range-row">
                           <button type="button" class="time-pick-btn" onclick="GMConsole.openFriendlyTimePicker(${idx}, 'start')">
                             <span>🟢 開始</span>
@@ -774,16 +852,34 @@
                           </button>
                         </div>
 
-                        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
-                          <select class="input-dark" style="font-size:13px;padding:7px 10px;flex:1;" onchange="GMConsole.updateSlotField(${idx}, 'scene', this.value)">
+                        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap;">
+                          <select class="input-dark" style="font-size:13px;padding:7px 10px;flex:1;min-width:150px;" onchange="GMConsole.updateSlotField(${idx}, 'scene', this.value)">
                             ${SCENE_OPTIONS.map(
                               (opt) => `<option value="${opt.v}" ${s.scene === opt.v ? "selected" : ""}>${opt.label}</option>`
                             ).join("")}
                           </select>
-                          <button type="button" class="btn-icon" title="刪除此時段" onclick="GMConsole.deleteScheduleSlot(${idx})">🗑️</button>
+                          ${
+                            s.scene === "theme"
+                              ? `<select class="input-dark" style="font-size:12.5px;padding:7px 9px;flex:1;min-width:155px;border-color:rgba(236,72,153,0.45);" onchange="GMConsole.updateSlotField(${idx}, 'themeType', this.value)">
+                                   <option value="" ${!s.themeType ? "selected" : ""}>🎪 預設主題：現場自由選</option>
+                                   ${themeChoices
+                                     .map(
+                                       (tc) => `<option value="${tc.id}" ${s.themeType === tc.id ? "selected" : ""}>${tc.icon} 預設：${esc(tc.name)}</option>`
+                                     )
+                                     .join("")}
+                                 </select>`
+                              : ""
+                          }
                         </div>
 
-                        <input type="text" class="input-dark" style="font-size:13px;padding:7px 10px;" value="${esc(s.title)}" placeholder="輸入行程標題" onchange="GMConsole.updateSlotField(${idx}, 'title', this.value)">
+                        <div style="margin-bottom:5px;">
+                          <label class="muted-xs" style="display:block;margin-bottom:2px;">📌 行程主標題（大字）：</label>
+                          <input type="text" class="input-dark" style="font-size:13px;padding:7px 10px;" value="${esc(s.title)}" placeholder="輸入行程主標題" onchange="GMConsole.updateSlotField(${idx}, 'title', this.value)">
+                        </div>
+                        <div>
+                          <label class="muted-xs" style="display:block;margin-bottom:2px;">📝 行事曆副標題補充說明（玩家行事曆灰白小字）：</label>
+                          <input type="text" class="input-dark" style="font-size:12.5px;padding:6px 10px;color:#cbd5e1;" value="${esc(s.desc || "")}" placeholder="輸入灰白小字補充說明（可留空）" onchange="GMConsole.updateSlotField(${idx}, 'desc', this.value)">
+                        </div>
                       </div>
                     `;
                   })
@@ -963,7 +1059,7 @@
             </button>
           </div>
 
-          <div class="sub-label">2. 依排程日期模擬跨日早上 08:00 刷新（重置 3 次額度 ＋ 低於 300 PT 補滿）：</div>
+          <div class="sub-label">2. 依排程日期模擬跨日早上 08:00 刷新（重置每日 ${g.maxScoringPlaysPerGamePerDay} 次額度 ＋ 低於 ${g.dailyFloorPoints} PT 補滿）：</div>
           <div class="bet-btn-grid" style="margin-bottom:14px;">
             ${uniqueDays
               .slice(1)
@@ -973,7 +1069,7 @@
               .join("")}
           </div>
 
-          <div class="sub-label">3. 模擬跨年午夜最後 8 秒煙火倒數 ＆ 簽到紅包 (+50 PT)：</div>
+          <div class="sub-label">3. 模擬跨年午夜最後 8 秒煙火倒數 ＆ 簽到紅包 (+${g.redPacketPoints} PT)：</div>
           <button class="btn btn-primary btn-sm" style="width:100%;margin-bottom:16px;" onclick="GMConsole.simulateMidnight()">
             🎆 全場跳轉跨年倒數 8 秒模擬
           </button>
@@ -1024,7 +1120,12 @@
         return;
       }
       const g = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}) };
-      const dayKey = "2026-12-31";
+      const normSlots = window.PartyEngine.getNormalizedSlots(ctx.schedule, g);
+      const firstDayKey = normSlots.length
+        ? window.PartyEngine.taipeiParts(normSlots[0].startMs).dateKey
+        : "2026-12-31";
+      const dayKey = g.activeDayKey || firstDayKey;
+      const initPts = Number(g.initialPoints) || 300;
       const pairs = window.PartyEngine.generateBalancedThighPairs(players.map((p) => p.id));
 
       for (const p of players) {
@@ -1033,16 +1134,16 @@
           thigh_id: pr.thigh_id,
           second_thigh_id: pr.second_thigh_id,
         });
-        // 發放初始 300 PT（冪等防重發）
+        // 發放初始積分（冪等防重發）
         await window.PartyDB.upsert(
           "ledger",
           [
             {
               id: `init_300_${p.id}`,
               player_id: p.id,
-              delta: Number(g.initialPoints) || 300,
+              delta: initPts,
               category: "initial",
-              reason: "🎉 跨年英雄紀元開賽初始基金",
+              reason: `🎉 《${g.eventTitle || "跨年英雄紀元"}》開賽初始基金`,
               day_key: dayKey,
             },
           ],
@@ -1074,7 +1175,7 @@
 
       await window.PartyDB.upsert("config", [{ key: "global", value: g }]);
       window.PartyFX.playTone("win");
-      window.PartyApp.toast("🎉 已完成全員 300 PT 補齊與秘密大腿／二腿雙環配對！");
+      window.PartyApp.toast(`🎉 已完成全員 ${initPts} PT 補齊與秘密大腿／二腿雙環配對！`);
       await window.PartyApp.refreshAll();
     },
 
@@ -1147,20 +1248,51 @@
     async saveGlobalParams() {
       const ctx = window.PartyApp.getContext();
       const g = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}) };
-      g.partyPlayStake = Math.max(5, Number(document.getElementById("cfg-play-stake")?.value || 20));
-      g.partyBetStake = Math.max(5, Number(document.getElementById("cfg-bet-stake")?.value || 10));
+      const txt = (id, fallback) => {
+        const el = document.getElementById(id);
+        if (!el) return fallback;
+        return el.value.trim() || fallback;
+      };
+      const num = (id, minV, fallback) => {
+        const el = document.getElementById(id);
+        if (!el) return fallback;
+        const v = Math.round(Number(el.value));
+        return Number.isFinite(v) && v >= minV ? v : fallback;
+      };
+
+      g.eventTitle = txt("cfg-event-title", g.eventTitle || "跨年英雄紀元");
+      g.shareLabelA = txt("cfg-share-label-a", g.shareLabelA || "2026 回顧");
+      g.shareLabelB = txt("cfg-share-label-b", g.shareLabelB || "2027 展望");
+      g.sharePromptA = txt("cfg-share-prompt-a", g.sharePromptA || "2026 年最值得分享的一件事");
+      g.sharePromptB = txt("cfg-share-prompt-b", g.sharePromptB || "2027 年最想完成的一件事");
+
+      g.partyPlayStake = num("cfg-play-stake", 5, g.partyPlayStake || 20);
+      g.partyBetStake = num("cfg-bet-stake", 5, g.partyBetStake || 10);
+      g.initialPoints = num("cfg-init-pts", 50, g.initialPoints || 300);
+      g.dailyFloorPoints = num("cfg-floor-pts", 0, g.dailyFloorPoints ?? 300);
+      g.maxScoringPlaysPerGamePerDay = num("cfg-max-plays", 1, g.maxScoringPlaysPerGamePerDay || 3);
+      g.maxBetsPerGamePerDay = num("cfg-max-bets", 1, g.maxBetsPerGamePerDay || 3);
+      g.hiddenMissionPoints = num("cfg-mission-pts", 5, g.hiddenMissionPoints || 35);
+      g.redPacketPoints = num("cfg-redpacket-pts", 5, g.redPacketPoints || 50);
+
       const newJoinPin = document.getElementById("cfg-join-pin")?.value.trim();
       if (newJoinPin) g.partyJoinPin = newJoinPin;
-      g.villaInfo = {
-        ...(g.villaInfo || {}),
-        wifiSsid: document.getElementById("cfg-wifi-ssid")?.value.trim() || "",
-        wifiPass: document.getElementById("cfg-wifi-pass")?.value.trim() || "",
-        address: document.getElementById("cfg-villa-addr")?.value.trim() || "",
-      };
       const newPin = document.getElementById("cfg-gm-pin")?.value.trim();
       if (newPin) g.gmPin = newPin;
+
+      g.villaInfo = {
+        ...(g.villaInfo || {}),
+        wifiSsid: document.getElementById("cfg-wifi-ssid")?.value.trim() ?? g.villaInfo?.wifiSsid ?? "",
+        wifiPass: document.getElementById("cfg-wifi-pass")?.value.trim() ?? g.villaInfo?.wifiPass ?? "",
+        doorCode: document.getElementById("cfg-door-code")?.value.trim() ?? g.villaInfo?.doorCode ?? "",
+        mapUrl: document.getElementById("cfg-villa-map")?.value.trim() ?? g.villaInfo?.mapUrl ?? "",
+        address: document.getElementById("cfg-villa-addr")?.value.trim() ?? g.villaInfo?.address ?? "",
+        notes: document.getElementById("cfg-villa-notes")?.value.trim() ?? g.villaInfo?.notes ?? "",
+      };
+
+      document.querySelectorAll("[data-dirty]").forEach((el) => delete el.dataset.dirty);
       await window.PartyDB.upsert("config", [{ key: "global", value: g }]);
-      window.PartyApp.toast("✅ 全域參數、PIN 碼與民宿資訊已儲存！");
+      window.PartyApp.toast("✅ 全域參數、活動標題、額度與民宿資訊已同步更新！");
       await window.PartyApp.refreshAll();
     },
 
@@ -1357,9 +1489,85 @@
         JSON.stringify((ctx.schedule && ctx.schedule.length) ? ctx.schedule : CFG.DEFAULT_SCHEDULE)
       );
       if (!next[idx]) return;
-      next[idx][field] = field === "title" ? String(val || "").trim() || next[idx].title : val;
+      if (field === "title") {
+        next[idx].title = String(val || "").trim() || next[idx].title;
+      } else if (field === "desc") {
+        next[idx].desc = String(val ?? "").trim();
+      } else if (field === "scene") {
+        next[idx].scene = val;
+        if (val === "red_packet") next[idx].themeType = "nye_red_packet";
+        else if (val !== "theme") next[idx].themeType = "";
+      } else {
+        next[idx][field] = val;
+      }
+      document.querySelectorAll("[data-dirty]").forEach((el) => delete el.dataset.dirty);
       await window.PartyDB.upsert("config", [{ key: "schedule", value: next }]);
-      window.PartyApp.toast("✅ 排程已自動儲存！");
+      window.PartyApp.toast("✅ 排程已自動儲存並同步玩家行事曆！");
+      await window.PartyApp.refreshAll();
+    },
+
+    async insertScheduleSlotBefore(idx) {
+      const ctx = window.PartyApp.getContext();
+      const next = JSON.parse(
+        JSON.stringify((ctx.schedule && ctx.schedule.length) ? ctx.schedule : CFG.DEFAULT_SCHEDULE)
+      );
+      if (idx < 0 || idx >= next.length) return this.addScheduleSlot();
+
+      const round5Min = (ms) => Math.round(ms / (5 * 60000)) * (5 * 60000);
+      const cur = next[idx];
+      const curStartMs = window.PartyEngine.parseTaipeiMs(cur.start);
+      const curEndMs = window.PartyEngine.parseTaipeiMs(cur.end);
+
+      let newStartMs;
+      let newEndMs;
+
+      if (idx === 0) {
+        newStartMs = curStartMs - 60 * 60000;
+        newEndMs = curStartMs;
+      } else {
+        const prev = next[idx - 1];
+        const prevStartMs = window.PartyEngine.parseTaipeiMs(prev.start);
+        const prevEndMs = window.PartyEngine.parseTaipeiMs(prev.end);
+        if (curStartMs - prevEndMs >= 15 * 60000) {
+          // 兩段之間原本就有空檔，直接填入空檔
+          newStartMs = prevEndMs;
+          newEndMs = curStartMs;
+        } else if (prevEndMs - prevStartMs >= 40 * 60000) {
+          // 自動切分前一時段後半段，不影響目標時段開始時間！
+          const splitMs = round5Min(
+            prevEndMs - Math.min(60 * 60000, Math.floor((prevEndMs - prevStartMs) / 2))
+          );
+          prev.end = window.PartyEngine.taipeiParts(splitMs).isoLocal;
+          newStartMs = splitMs;
+          newEndMs = curStartMs;
+        } else {
+          // 前一時段較短時，自動切分當前時段前半段
+          const splitMs = round5Min(
+            curStartMs + Math.max(15 * 60000, Math.floor((curEndMs - curStartMs) / 2))
+          );
+          newStartMs = curStartMs;
+          newEndMs = splitMs;
+          cur.start = window.PartyEngine.taipeiParts(splitMs).isoLocal;
+          cur.day = window.PartyEngine.formatShortDateWeek(splitMs);
+        }
+      }
+
+      const sp = window.PartyEngine.taipeiParts(newStartMs);
+      const ep = window.PartyEngine.taipeiParts(newEndMs);
+      const inserted = {
+        id: `s_ins_${Date.now()}`,
+        day: `${sp.mm}/${sp.dd} (${sp.wk})`,
+        start: sp.isoLocal,
+        end: ep.isoLocal,
+        scene: "party",
+        themeType: "",
+        title: "🎲 自由賽桌暖場時段",
+        desc: "自由開 1～3 分鐘賽桌對決與場邊下注！",
+      };
+      next.splice(idx, 0, inserted);
+      await window.PartyDB.upsert("config", [{ key: "schedule", value: next }]);
+      window.PartyFX.haptic("medium");
+      window.PartyApp.toast("➕ 已在上方插入新時段！可直接修改標題、灰白副標題與時間");
       await window.PartyApp.refreshAll();
     },
 
@@ -1572,10 +1780,11 @@
 
     async simulateMorning(newDayKey) {
       const ctx = window.PartyApp.getContext();
+      const g = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}) };
       const res = await window.PartyEngine.executeDailyMorningRefresh(newDayKey, ctx, { manual: true });
       window.PartyFX.playTone("bell");
       window.PartyApp.toast(
-        `☀️ 已切換至 ${newDayKey} 早上 08:00！重置每日 3 次參賽/下注額度，並為 ${res.toppedUpCount} 位低於 300 PT 玩家回血補滿！`
+        `☀️ 已切換至 ${newDayKey} 早上 08:00！重置每日 ${g.maxScoringPlaysPerGamePerDay} 次參賽/${g.maxBetsPerGamePerDay} 次下注額度，並為 ${res.toppedUpCount} 位低於 ${g.dailyFloorPoints} PT 玩家回血補滿！`
       );
       await window.PartyApp.refreshAll();
     },

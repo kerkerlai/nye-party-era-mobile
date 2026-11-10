@@ -507,6 +507,7 @@ void main() {
 
       final codemagic = File('codemagic.yaml').readAsStringSync();
       expect(codemagic.contains('bundle_identifier: com.kerkerlai.nyepartyera'), isTrue);
+      expect(codemagic.contains('APP_STORE_APPLE_ID: "6832899646"'), isTrue);
       expect(codemagic.contains('java: 21'), isTrue);
     });
 

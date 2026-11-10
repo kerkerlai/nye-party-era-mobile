@@ -26,6 +26,12 @@ window.PARTY_CONFIG = {
 
   // 活動預設參數（直接以排程自動切換 + GM 手動切換統一運作，無獨立預熱模式差異）
   DEFAULTS: {
+    eventTitle: "跨年英雄紀元",
+    shareLabelA: "2026 回顧",
+    sharePromptA: "2026 年最值得分享的一件事",
+    shareLabelB: "2027 展望",
+    sharePromptB: "2027 年最想完成的一件事",
+    ceremonyStage: 1, // 終局頒獎典禮揭曉階段 1~4
     seasonStatus: "active", // active | settled
     sceneOverride: "auto", // auto | pre_event | dining | party | happy_hour | theme | red_packet | viewer
     activeDayKey: "2026-12-31",
@@ -168,8 +174,8 @@ window.PARTY_CONFIG = {
 
   // 成就徽章目錄 (自動判定背景觸發 vs 個人主頁只顯示需要同伴 Check 的 6 項)
   BADGE_CATALOG: [
-    // 👑 結算唯一冠 (+80 PT，1/3 最終結算自動頒發)
-    { code: "crown_social", tier: "crown", icon: "👑", name: "社交恐怖分子", points: 80, auto: true, desc: "四天內與最多「不同朋友」同桌遊戲＋互動解任務第 1 名" },
+    // 👑 結算唯一冠 (+80 PT，終局結算自動頒發)
+    { code: "crown_social", tier: "crown", icon: "👑", name: "社交恐怖分子", points: 80, auto: true, desc: "活動期間與最多「不同朋友」同桌遊戲＋互動解任務第 1 名" },
     { code: "crown_switch", tier: "crown", icon: "👑", name: "Switch 大魔王", points: 80, auto: true, desc: "Switch 自由賽桌累積計分奪冠第 1 名" },
     { code: "crown_bettor", tier: "crown", icon: "👑", name: "地下賭聖", points: 80, auto: true, desc: "場邊下注命中率最高者" },
     { code: "crown_agent", tier: "crown", icon: "👑", name: "王牌特務", points: 80, auto: true, desc: "個人 Chill 隱藏任務累計完成數第 1 名" },
@@ -178,8 +184,8 @@ window.PARTY_CONFIG = {
     { code: "mile_mingle", tier: "silver", icon: "🥂", name: "雨露均霑", points: 40, auto: true, desc: "與多數不同朋友同桌玩過 Party Game" },
     { code: "mile_spy", tier: "silver", icon: "🕵️", name: "影帝級臥底", points: 40, auto: true, desc: "在《誰是臥底》擔任內鬼存活獲勝" },
     { code: "mile_twins", tier: "silver", icon: "💞", name: "靈魂雙胞胎", points: 40, auto: true, desc: "在《2v2 靈魂默契》單局 8 題中答出同答案達 6 題以上" },
-    { code: "mile_sherlock", tier: "silver", icon: "🔍", name: "神探夏洛克", points: 40, auto: true, desc: "在 1/1《尋找真實小人》所屬隊伍贏得最快搜查勝利" },
-    { code: "mile_mindreader", tier: "silver", icon: "🔮", name: "讀心神探", points: 40, auto: true, desc: "在《跨年英雄紀元・分享篇》單輪命中率達 70% 以上" },
+    { code: "mile_sherlock", tier: "silver", icon: "🔍", name: "神探夏洛克", points: 40, auto: true, desc: "在《實體小人攻防戰》所屬隊伍贏得最快搜查勝利" },
+    { code: "mile_mindreader", tier: "silver", icon: "🔮", name: "讀心神探", points: 40, auto: true, desc: "在分享盲猜主題賽單輪命中率達 70% 以上" },
 
     // 🎭 歡樂互助章 (+25 PT，100% 系統自動背景入帳)
     { code: "fun_jinx", tier: "fun", icon: "🕯️", name: "反指標冥燈", points: 25, auto: true, desc: "場邊下注連續猜錯 5 把安慰獎" },
@@ -193,5 +199,36 @@ window.PARTY_CONFIG = {
     { code: "chore_driver", tier: "chore", icon: "🚗", name: "平安御用司機", points: 40, auto: false, maxCount: 1, needWitness: 2, desc: "跨年行程負責開車載大家往返或採買（2位同車認證，限1次）" },
     { code: "chore_photo", tier: "chore", icon: "📸", name: "回憶攝影師", points: 30, auto: false, maxCount: 2, needWitness: 2, needLineAlbumCheck: true, desc: "幫大家拍大合照或活動側拍並傳到 LINE 群組相簿（2位朋友認證，限2次）" },
     { code: "morning_bird", tier: "morning", icon: "🌅", name: "晨間陽光鳥", points: 30, auto: false, maxCount: 3, needWitness: 1, desc: "早上 06:30～09:00 在客廳早起並與 1 位早起夥伴互證（每日限1次）" }
-  ]
+  ],
+
+  // 100% 動態連動 GM 後台注碼與加成倍率之規則說明產生器（杜絕寫死 20 PT 掉棒！）
+  getDynamicScoringRule(gameOrId, globalCfg) {
+    const g = { ...this.DEFAULTS, ...(globalCfg || {}) };
+    const id = typeof gameOrId === "string" ? gameOrId : gameOrId?.id;
+    const s = Number(g.partyPlayStake) || 20;
+    const rate = Number(g.happyHourBonusRate) || 0.5;
+    const hhPct = Math.round(rate * 100);
+    const hhMult = 1 + rate;
+
+    switch (id) {
+      case "switch_free":
+        return `每位計分選手入場押 ${s} PT 進獎池（如 4 人計分局總池 ${s * 4} PT；🔥限時加成補貼 +${hhPct}% 變 ${Math.round(s * 4 * hhMult)} PT），由「唯一第 1 名贏家」獨得全部選手獎池！累積計分奪冠最多者，終局結算再獲【👑 Switch 大魔王 +80 PT】。`;
+      case "quick_draw":
+        return `每位計分選手入場押 ${s} PT，越多人玩獎金越肥（例如 8 人局總獎池 ${s * 8} PT、14 人局 ${s * 14} PT；🔥限時加成總池再 +${hhPct}%），由全場最快／最準的「唯一第 1 名贏家」獨吞全部獎池！`;
+      case "number_bomb":
+        return `每位計分選手押 ${s} PT（2人局總池 ${s * 2} PT、3人局總池 ${s * 3} PT；🔥限時加成再 +${hhPct}%），由「最後唯一存活未踩雷者」獨得獎池！`;
+      case "rps_king": {
+        const hhPot = Math.round(s * 2 * hhMult);
+        return `雙方計分選手各押 ${s} PT（總獎池 ${s * 2} PT＝贏家淨賺 +${s} PT；🔥限時加成總獎池 ${hhPot} PT＝贏家淨賺 +${hhPot - s} PT），搶滿 3 勝自動派彩！`;
+      }
+      case "soul_sync_2v2":
+        return `每位計分選手押 ${s} PT：①【2人合作】對 0～4 題失敗沒收本金；對 5～6 題過關退本金外每人淨賺 +20 PT；對 7～8 題大滿貫每人淨賺 +35 PT（🔥限時加成淨利再 +${hhPct}%）。②【4人對抗】高分組平分總獎池（平手退回本金）。單局對滿 6 題再自動解鎖【💞 靈魂雙胞胎 +40 PT】！`;
+      case "ito_numbers":
+        return `每位計分選手押 ${s} PT：翻牌數字「完全由小到大不逆序」即過關！退回本金外依人數發高額淨利：3人 +20、4人 +30、5人 +45、6人 +60、7人 +80、8人 +100 PT（🔥限時加成淨利再 +${hhPct}%，8人高達 +${Math.round(100 * hhMult)} PT！）；排錯逆序則沒收本金！`;
+      case "five_seconds":
+        return `每位計分選手押 ${s} PT 進總獎池（🔥限時加成獎池 +${hhPct}%），3 輪結束後由累積得分最高者獨得全部選手獎池！`;
+      default:
+        return (typeof gameOrId === "object" && gameOrId?.scoringRule) || "";
+    }
+  }
 };

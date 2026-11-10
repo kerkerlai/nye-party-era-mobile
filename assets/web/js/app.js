@@ -49,13 +49,20 @@
     choreModalBadge: null,
     selectedLoginEmoji: "🦊",
     pendingLoginAvatarUrl: "",
+    loginDraftName: "",
+    loginDraftPin: "",
     uploadingAvatar: false,
     currentZoomScale: 1,
     reactionTestState: { phase: "idle", fireAt: 0, lastMs: null },
     seenTableIds: new Set(),
+    seenNudgeKeys: new Set(),
     seenClaimIds: new Set(),
     shownResultSplashIds: new Set(),
     lastKnownScene: null,
+    lastKnownCeremonyStage: 1,
+    localCeremonyPreviewStage: 0,
+    _logoTapCount: 0,
+    _logoTapResetTimer: null,
     initializedOnce: false,
 
     data: {
@@ -120,6 +127,11 @@
       const modal = document.getElementById("party-modal");
       if (modal && !modal.classList.contains("hidden")) {
         window.PartyGamesUI.closeModal();
+        return true;
+      }
+      const roomOverlay = document.getElementById("game-room-overlay");
+      if (roomOverlay && !roomOverlay.classList.contains("hidden")) {
+        window.PartyGamesUI.minimizeRoomWindow();
         return true;
       }
       if (this.tab !== "stage") {
@@ -271,6 +283,94 @@
       if (slotPrefix) sessionStorage.setItem(`${slotPrefix}gm`, val ? "1" : "");
       else localStorage.setItem("nye_party_gm", val ? "1" : "");
       this.render();
+    },
+
+    // c-1: 隱藏一般玩家的 GM Tab，連點左上角品牌 Logo 3 下彈出主辦人控場解鎖視窗
+    handleLogoTap() {
+      this._logoTapCount = (this._logoTapCount || 0) + 1;
+      clearTimeout(this._logoTapResetTimer);
+      this._logoTapResetTimer = setTimeout(() => {
+        this._logoTapCount = 0;
+      }, 1500);
+
+      if (this._logoTapCount >= 3) {
+        this._logoTapCount = 0;
+        clearTimeout(this._logoTapResetTimer);
+        window.PartyFX.haptic("medium");
+        if (this.isGmUnlocked) {
+          this.switchTab("gm");
+          this.toast("👑 已切換至 GM 主控台！");
+        } else {
+          this.openGmUnlockModal();
+        }
+      }
+    },
+
+    openGmUnlockModal() {
+      const modal = document.getElementById("party-modal");
+      const box = document.getElementById("party-modal-body");
+      if (!modal || !box) return;
+      modal.classList.remove("hidden");
+      box.innerHTML = `
+        <div class="modal-head">
+          <h3>👑 主辦人 GM 控場解鎖</h3>
+          <button class="btn-close" onclick="PartyGamesUI.closeModal()">✕</button>
+        </div>
+        <p class="muted-sm" style="margin-bottom:12px;">此區為活動主辦人專屬黑盒控場後台。請輸入 GM 控場密碼解鎖：</p>
+        <input type="password" inputmode="numeric" id="gm-unlock-modal-pin" class="input-dark" placeholder="請輸入 GM 控場密碼" onkeydown="if(event.key==='Enter') PartyApp.submitGmUnlockModal()">
+        <div class="grid-2-btns" style="margin-top:12px;">
+          <button class="btn btn-ghost" onclick="PartyGamesUI.closeModal()">取消</button>
+          <button class="btn btn-gold" onclick="PartyApp.submitGmUnlockModal()">🔑 解鎖進入後台</button>
+        </div>
+      `;
+      setTimeout(() => document.getElementById("gm-unlock-modal-pin")?.focus(), 60);
+    },
+
+    submitGmUnlockModal() {
+      const inp = document.getElementById("gm-unlock-modal-pin");
+      const val = inp ? inp.value.trim() : "";
+      const ctx = this.getContext();
+      const expected = String(ctx.globalCfg?.gmPin || CFG.DEFAULT_GM_PIN).trim();
+      if (val === expected) {
+        window.PartyGamesUI.closeModal();
+        this.setGmUnlocked(true);
+        this.switchTab("gm");
+        window.PartyFX.playTone("win");
+        this.toast("👑 GM 主控台已解鎖！底部導覽列已開啟「GM控場」");
+      } else {
+        window.PartyFX.haptic("heavy");
+        this.toast("❌ GM 密碼不正確，僅限主辦人解鎖！");
+      }
+    },
+
+    toggleSoundMute() {
+      const muted = window.PartyFX.toggleMute();
+      this.toast(muted ? "🔇 已切換為靜音模式（保留震動與視覺動畫）" : "🔊 已開啟派對音效！");
+      this.render();
+    },
+
+    showRedPacketSplash(pts, eventTitle) {
+      const el = document.getElementById("result-splash");
+      const card = document.getElementById("result-splash-card");
+      if (!el || !card) return;
+      card.style.borderColor = "#fde047";
+      card.innerHTML = `
+        <div style="font-size:52px;line-height:1.1;margin-bottom:6px;">🧧🧨🎆</div>
+        <div class="muted-xs" style="color:#fde047;margin-bottom:4px;">《${esc(eventTitle || "跨年英雄紀元")}》午夜開運禮</div>
+        <h3 style="font-size:23px;color:#fff;margin-bottom:8px;">🎉 恭喜發財・新年快樂！</h3>
+        <div class="badge-pill pill-gold" style="font-size:18px;padding:9px 20px;margin:8px 0 14px;">
+          ✨ 開運紅包入帳 +${window.PartyEngine.fmtPt(pts)} PT！
+        </div>
+        <button class="btn btn-gold btn-sm" style="min-width:150px;" onclick="PartyApp.closeResultSplash()">
+          太讚啦！(3.5秒自動關閉)
+        </button>
+        <div class="result-splash-bar"></div>
+      `;
+      el.classList.remove("hidden");
+      clearTimeout(this._resultSplashTimer);
+      this._resultSplashTimer = setTimeout(() => {
+        this.closeResultSplash();
+      }, 3500);
     },
 
     switchTab(t) {
@@ -544,11 +644,16 @@
               ? sessionStorage.getItem(`${slotPrefix}gm`)
               : localStorage.getItem("nye_party_gm")
           );
+          const initMyId = getSavedPlayerId();
           (this.data.tables || []).forEach((t) => {
             this.seenTableIds.add(t.id);
+            if (t.game_state?.lastNudgeAt && initMyId) {
+              this.seenNudgeKeys.add(`${initMyId}_${t.id}_${t.game_state.lastNudgeAt}`);
+            }
             if (t.status === "finished") this.shownResultSplashIds.add(t.id);
           });
           (this.data.claims || []).forEach((c) => this.seenClaimIds.add(c.id));
+          this.lastKnownCeremonyStage = Number(this.data.globalCfg?.ceremonyStage) || 1;
           const effInit = window.PartyEngine.getEffectiveNowMs(
             this.data.globalCfg,
             window.PartyDB.serverNowMs
@@ -751,6 +856,7 @@
         }
 
         // 背景同步若使用者正在輸入文字框，暫緩整頁重繪以免收起手機鍵盤或洗掉打到一半的字！
+        // 特別保護登入頁 (!myId)：未登入時背景輪詢若無新夥伴名單變化，100% 不觸發重繪，杜絕輸入名稱切密碼框時被清空！
         const activeEl = document.activeElement;
         const isTyping =
           isBackground &&
@@ -759,6 +865,14 @@
             activeEl.tagName === "TEXTAREA" ||
             activeEl.tagName === "SELECT");
         this.dbConnectError = "";
+        if (!myId && isBackground) {
+          const nextRosterSig = (this.data.players || []).map((p) => `${p.id}:${p.name}`).join("|");
+          if (this._lastLoginRosterSig === nextRosterSig) {
+            return;
+          }
+          this._lastLoginRosterSig = nextRosterSig;
+          if (isTyping) return;
+        }
         if (isTyping) {
           if (!activeEl._deferHooked) {
             activeEl._deferHooked = true;
@@ -766,7 +880,9 @@
               "blur",
               () => {
                 activeEl._deferHooked = false;
-                this.render();
+                if (getSavedPlayerId()) {
+                  this.render();
+                }
               },
               { once: true }
             );
@@ -800,16 +916,47 @@
       const myId = getSavedPlayerId();
       if (!myId) return;
 
-      // 1. 新賽桌推播提醒 & 賽局結束 3 秒勝負開獎彈窗
+      const playerMap = {};
+      (this.data.players || []).forEach((p) => (playerMap[p.id] = p));
+
+      // 1. 新賽桌推播提醒（顯示房主名字！）& 桌長催人廣播 & 賽局結束 3 秒勝負開獎彈窗
       for (const t of this.data.tables || []) {
+        const hostName =
+          playerMap[t.host_id]?.name || t.host_name || t.participants?.[0]?.name || "夥伴";
         if (!this.seenTableIds.has(t.id)) {
           this.seenTableIds.add(t.id);
+          if (t.game_state?.lastNudgeAt) {
+            this.seenNudgeKeys.add(`${myId}_${t.id}_${t.game_state.lastNudgeAt}`);
+          }
           if (t.status === "open" && t.host_id !== myId) {
             window.PartyFX.notify(
-              "🔥 新賽桌開盤揪團！",
-              `「${t.title}」正在集結與開放場邊下注！`
+              `🔥 房主【${hostName}】開新賽桌囉！`,
+              `【${hostName}】正在揪團玩「${t.title}」，快進來參賽或場邊下注！`
             );
-            this.toast(`🔥 新賽桌開盤：【${t.title}】快去參賽或下注！`);
+            this.toast(`🔥 房主【${hostName}】開桌：【${t.title}】快去參賽或下注！`);
+          }
+        } else if (t.status === "open" && t.game_state?.lastNudgeAt) {
+          const nudgeKey = `${myId}_${t.id}_${t.game_state.lastNudgeAt}`;
+          if (!this.seenNudgeKeys.has(nudgeKey)) {
+            this.seenNudgeKeys.add(nudgeKey);
+            const amIn = (t.participants || []).some((p) => p.id === myId);
+            if (t.host_id !== myId && !amIn) {
+              const nudger = t.game_state.lastNudgeBy || hostName;
+              const gm = CFG.PARTY_GAMES.find((x) => x.id === t.game_type) || CFG.PARTY_GAMES[0];
+              const minNeed =
+                t.game_type === "soul_sync_2v2" && (t.participants || []).length === 3
+                  ? 1
+                  : Math.max(0, gm.minPlayers - (t.participants || []).length);
+              const needTxt =
+                minNeed > 0
+                  ? `還差 ${minNeed} 人開局`
+                  : `目前 ${(t.participants || []).length}/${gm.maxPlayers} 人即將開戰`;
+              window.PartyFX.notify(
+                `📢 房主【${nudger}】緊急催人進房！`,
+                `【${nudger}】在「${t.title}」呼喚大家加入（${needTxt}）！`
+              );
+              this.toast(`📢 房主【${nudger}】催人進房：【${t.title}】（${needTxt}）！`);
+            }
           }
         }
         if (t.status === "finished" && !this.shownResultSplashIds.has(t.id)) {
@@ -821,6 +968,18 @@
           if (amParticipant || amBettor) {
             this.showTableResultSplash(t);
           }
+        }
+      }
+
+      // 1b. 終局頒獎典禮揭曉第 4 幕（總冠軍登基）全場同步放煙火！
+      const curCeremonyStage = Number(this.data.globalCfg?.ceremonyStage) || 1;
+      if (curCeremonyStage !== this.lastKnownCeremonyStage) {
+        const prevStage = this.lastKnownCeremonyStage;
+        this.lastKnownCeremonyStage = curCeremonyStage;
+        if (curCeremonyStage === 4 && prevStage < 4) {
+          window.PartyFX.playTone("win");
+          window.PartyFX.haptic("heavy");
+          window.PartyFX.launchFireworksShow({ redPackets: false, durationMs: 3800 });
         }
       }
 
@@ -961,14 +1120,40 @@
       const ctx = this.getContext();
 
       if (!ctx.me) {
+        const curNameEl = document.getElementById("login-name");
+        const curPinEl = document.getElementById("login-pin");
+        const activeLoginId = document.activeElement?.id || "";
+        if (curNameEl) this.loginDraftName = curNameEl.value;
+        if (curPinEl) this.loginDraftPin = curPinEl.value;
+
+        this._lastLoginRosterSig = (ctx.players || []).map((p) => `${p.id}:${p.name}`).join("|");
+        if (window.PartyGamesUI && window.PartyGamesUI.syncRoomOverlay) {
+          window.PartyGamesUI.syncRoomOverlay(ctx);
+        }
         root.innerHTML = this.renderOnboarding(ctx);
-        Object.entries(savedDrafts).forEach(([id, val]) => {
-          const el = document.getElementById(id);
-          if (el && val) el.value = val;
-        });
+
+        const nextNameEl = document.getElementById("login-name");
+        const nextPinEl = document.getElementById("login-pin");
+        if (nextNameEl && this.loginDraftName) {
+          nextNameEl.value = this.loginDraftName;
+          nextNameEl.dataset.dirty = "1";
+        }
+        if (nextPinEl && this.loginDraftPin) {
+          nextPinEl.value = this.loginDraftPin;
+          nextPinEl.dataset.dirty = "1";
+        }
+        if (activeLoginId) {
+          document.getElementById(activeLoginId)?.focus();
+        }
         return;
       }
 
+      if (!this.isGmUnlocked && this.tab === "gm") {
+        this.tab = "stage";
+      }
+
+      const gTop = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}) };
+      const evTitle = gTop.eventTitle || "跨年英雄紀元";
       const isPreEvent = ctx.sceneInfo.scene === "pre_event";
       const pendingForMe = isPreEvent ? [] : this.getPendingClaimsForMe(ctx);
       const badgeDot = pendingForMe.length > 0 ? `<span class="nav-dot">${pendingForMe.length}</span>` : "";
@@ -980,7 +1165,7 @@
       root.innerHTML = `
         <header class="top-bar">
           <div class="brand-row">
-            <span class="brand-logo">🥂 跨年英雄</span>
+            <span class="brand-logo" onclick="PartyApp.handleLogoTap()" title="主辦人連點 3 下可解鎖控場後台">🥂 ${esc(evTitle)}</span>
             <div class="top-status-group">
               ${myPtBadgeHtml}
               <span class="scene-indicator sc-${ctx.sceneInfo.scene}">${esc(ctx.sceneInfo.label)}</span>
@@ -1000,7 +1185,7 @@
           }
         </main>
 
-        <nav class="bottom-nav">
+        <nav class="bottom-nav ${this.isGmUnlocked ? "" : "cols-2"}">
           <button class="nav-item ${this.tab === "stage" ? "active" : ""}" onclick="PartyApp.switchTab('stage')">
             <span class="nav-icon">🎮${badgeDot}</span>
             <span>遊戲舞台</span>
@@ -1009,10 +1194,14 @@
             <span class="nav-icon">🏠</span>
             <span>個人主頁</span>
           </button>
-          <button class="nav-item ${this.tab === "gm" ? "active" : ""}" onclick="PartyApp.switchTab('gm')">
-            <span class="nav-icon">👑</span>
-            <span>GM控場</span>
-          </button>
+          ${
+            this.isGmUnlocked
+              ? `<button class="nav-item ${this.tab === "gm" ? "active" : ""}" onclick="PartyApp.switchTab('gm')">
+                   <span class="nav-icon">👑</span>
+                   <span>GM控場</span>
+                 </button>`
+              : ""
+          }
         </nav>
       `;
 
@@ -1044,6 +1233,9 @@
         }
       }
       this._lastRenderedTab = this.tab;
+      if (window.PartyGamesUI && window.PartyGamesUI.syncRoomOverlay) {
+        window.PartyGamesUI.syncRoomOverlay(ctx);
+      }
     },
 
     // ==================== 登入／註冊 Onboarding（支援自行上傳照片 + 角色手機綁定鎖！） ====================
@@ -1056,12 +1248,13 @@
         ctx.globalCfg
       );
       const joinPinHint = ctx.globalCfg?.partyJoinPin || "1234";
+      const evTitle = ctx.globalCfg?.eventTitle || "跨年英雄紀元";
 
       return `
         <div class="onboard-wrap">
           <div class="onboard-card">
             <div class="eyebrow-tag">🎉 ${esc(dateRangeStr)} 派對專屬</div>
-            <h1 style="font-size:28px;margin:10px 0 4px;">《跨年英雄紀元》</h1>
+            <h1 style="font-size:28px;margin:10px 0 4px;">《${esc(evTitle)}》</h1>
             <p class="muted-sm" style="margin-bottom:14px;">
               上傳你的個人大頭貼並輸入暱稱與派對 PIN 碼登入（登入後將自動記住這支手機，滑掉重開或誤登出輸入同暱稱即可連回！）
             </p>
@@ -1107,14 +1300,14 @@
             <div style="text-align:left;display:flex;flex-direction:column;gap:10px;">
               <div>
                 <label class="sub-label">英雄暱稱 ID（大家認得出你的名字）</label>
-                <input type="text" id="login-name" class="input-dark" maxlength="16" placeholder="例如：Kerker / 小明">
+                <input type="text" id="login-name" class="input-dark" maxlength="16" value="${esc(this.loginDraftName || "")}" oninput="PartyApp.loginDraftName=this.value" onchange="PartyApp.loginDraftName=this.value" placeholder="例如：Kerker / 小明">
               </div>
               <div>
                 <label class="sub-label">派對登入 PIN 碼（輸入主辦人給的 4 碼 PIN）</label>
-                <input type="password" inputmode="numeric" id="login-pin" class="input-dark" maxlength="8" placeholder="輸入 4 碼通行 PIN（如 ${esc(joinPinHint)}）" onkeydown="if(event.key==='Enter') PartyApp.submitLogin()">
+                <input type="password" inputmode="numeric" id="login-pin" class="input-dark" maxlength="8" value="${esc(this.loginDraftPin || "")}" oninput="PartyApp.loginDraftPin=this.value" onchange="PartyApp.loginDraftPin=this.value" placeholder="輸入 4 碼通行 PIN（如 ${esc(joinPinHint)}）" onkeydown="if(event.key==='Enter') PartyApp.submitLogin()">
               </div>
               <button class="btn btn-gold" style="width:100%;margin-top:6px;padding:13px;font-size:16px;" onclick="PartyApp.submitLogin()">
-                🚀 進入跨年英雄紀元！
+                🚀 進入《${esc(evTitle)}》！
               </button>
             </div>
 
@@ -1125,7 +1318,7 @@
                     <div class="part-chips">
                       ${ctx.players
                         .map(
-                          (p) => `<span class="part-chip" style="cursor:pointer;" onclick="document.getElementById('login-name').value='${esc(p.name)}'">
+                          (p) => `<span class="part-chip" style="cursor:pointer;" onclick="PartyApp.loginDraftName='${esc(p.name)}';document.getElementById('login-name').value='${esc(p.name)}'">
                             ${avatarHtml(p, 22)} <span>${esc(p.name)}</span>
                           </span>`
                         )
@@ -1158,14 +1351,20 @@
     },
 
     pickLoginEmoji(emoji) {
+      const curN = document.getElementById("login-name");
+      const curP = document.getElementById("login-pin");
+      if (curN) this.loginDraftName = curN.value;
+      if (curP) this.loginDraftPin = curP.value;
       this.selectedLoginEmoji = emoji;
       this.pendingLoginAvatarUrl = "";
       this.render();
     },
 
     async submitLogin() {
-      const name = document.getElementById("login-name")?.value.trim() || "";
-      const rawPin = document.getElementById("login-pin")?.value.trim() || "";
+      const name = (document.getElementById("login-name")?.value ?? this.loginDraftName ?? "").trim();
+      const rawPin = (document.getElementById("login-pin")?.value ?? this.loginDraftPin ?? "").trim();
+      this.loginDraftName = name;
+      this.loginDraftPin = rawPin;
       if (!name) {
         this.toast("請輸入你的暱稱 ID！");
         return;
@@ -1213,6 +1412,8 @@
           await window.PartyDB.update("players", `id=eq.${encodeURIComponent(existing.id)}`, patch);
         }
         this.pendingLoginAvatarUrl = "";
+        this.loginDraftName = "";
+        this.loginDraftPin = "";
         setSavedPlayerId(existing.id);
         await this.refreshAll(true);
         return;
@@ -1240,6 +1441,8 @@
         },
       ]);
       this.pendingLoginAvatarUrl = "";
+      this.loginDraftName = "";
+      this.loginDraftPin = "";
 
       // 若活動已經正式開始（中途晚到的朋友），自動補發初始 300 PT 與今日隱藏任務！
       const effNow = window.PartyEngine.getEffectiveNowMs(
@@ -1291,6 +1494,10 @@
 
     logoutSwitchAccount() {
       this.closeResultSplash();
+      if (window.PartyGamesUI) {
+        window.PartyGamesUI.activeRoomTableId = null;
+      }
+      document.getElementById("game-room-overlay")?.classList.add("hidden");
       this.isGmUnlocked = false;
       this.tab = "stage";
       if (slotPrefix) {
@@ -1387,6 +1594,11 @@
 
       const ok26 = Boolean(me.share_2026?.story && me.share_2026?.trueFact);
       const ok27 = Boolean(me.share_2027?.story && me.share_2027?.trueFact);
+      const lbA = g.shareLabelA || "2026 回顧";
+      const lbB = g.shareLabelB || "2027 展望";
+      const prA = g.sharePromptA || "2026 年最值得分享的一件事";
+      const prB = g.sharePromptB || "2027 年最想完成的一件事";
+      const isMuted = window.PartyFX.isMuted();
 
       return `
         ${isPreEvent ? "" : this.renderCollapsibleScheduleCard(ctx)}
@@ -1410,7 +1622,10 @@
                 }
               </div>
             </div>
-            <button class="btn btn-ghost btn-xs" title="切換或登出帳號" onclick="PartyApp.logoutSwitchAccount()">🚪 換帳號</button>
+            <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;">
+              <button class="btn btn-ghost btn-xs" title="切換音效開關" onclick="PartyApp.toggleSoundMute()">${isMuted ? "🔇 已靜音" : "🔊 音效開"}</button>
+              <button class="btn btn-ghost btn-xs" title="切換或登出帳號" onclick="PartyApp.logoutSwitchAccount()">🚪 換帳號</button>
+            </div>
           </div>
 
           ${
@@ -1469,17 +1684,17 @@
           }
         </div>
 
-        <!-- 2. 行前必填：2026 & 2027 個人資料卡 -->
+        <!-- 2. 行前必填：雙輪個人資料分享卡 -->
         <div class="section-card">
           <details ${!ok26 || !ok27 || isPreEvent ? "open" : ""}>
             <summary style="font-weight:800;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-              <span>✍️ 個人資料填寫（2026 回顧 ＆ 2027 展望）</span>
+              <span>✍️ 個人資料填寫（${esc(lbA)} ＆ ${esc(lbB)}）</span>
               <span class="q-tag ${ok26 && ok27 ? "q-ok" : "q-lock"}">${ok26 && ok27 ? "✅ 已完成" : "⏳ 請填寫"}</span>
             </summary>
-            <p class="muted-xs" style="margin:8px 0;">請分別寫下一件 2026 年度代表事與 2027 新年願望（請勿在內文寫出自己名字），並各附上 <b>1 個真實細節 + 3 個瞎掰假細節</b>：</p>
+            <p class="muted-xs" style="margin:8px 0;">請分別寫下【${esc(lbA)}】與【${esc(lbB)}】（請勿在內文寫出自己名字），並各附上 <b>1 個真實細節 + 3 個瞎掰假細節</b>：</p>
 
             <div class="share-form-block">
-              <div class="sub-label">📘 Part A：2026 年最值得分享的一件事</div>
+              <div class="sub-label">📘 Part A：${esc(prA)}</div>
               <input id="sh26-story" class="input-dark" placeholder="例：今年一個人去北海道自駕差點迷路" value="${esc(me.share_2026?.story || "")}">
               <input id="sh26-true" class="input-dark" style="margin-top:6px;border-color:rgba(16,185,129,0.5);" placeholder="✅ 1 個真實細節（例：最後是靠便利商店店員畫地圖救了我）" value="${esc(me.share_2026?.trueFact || "")}">
               <input id="sh26-f1" class="input-dark" style="margin-top:5px;" placeholder="🎭 假細節 1" value="${esc(me.share_2026?.fakeFacts?.[0] || "")}">
@@ -1488,7 +1703,7 @@
             </div>
 
             <div class="share-form-block" style="margin-top:12px;">
-              <div class="sub-label">🚀 Part B：2027 年最想完成的一件事</div>
+              <div class="sub-label">🚀 Part B：${esc(prB)}</div>
               <input id="sh27-story" class="input-dark" placeholder="例：報名人生第一場鐵人三項或學衝浪" value="${esc(me.share_2027?.story || "")}">
               <input id="sh27-true" class="input-dark" style="margin-top:6px;border-color:rgba(16,185,129,0.5);" placeholder="✅ 1 個真實動機／細節" value="${esc(me.share_2027?.trueFact || "")}">
               <input id="sh27-f1" class="input-dark" style="margin-top:5px;" placeholder="🎭 假細節 1" value="${esc(me.share_2027?.fakeFacts?.[0] || "")}">
@@ -1497,7 +1712,7 @@
             </div>
 
             <button class="btn btn-gold" style="width:100%;margin-top:10px;" onclick="PartyApp.saveMyShareCards()">
-              💾 儲存我的 2026 & 2027 個人資料
+              💾 儲存我的個人分享卡資料
             </button>
           </details>
         </div>
@@ -1512,7 +1727,22 @@
               <b>📶 Wi-Fi</b>：<code>${esc(g.villaInfo?.wifiSsid || "")}</code> ／ 密碼：<code>${esc(g.villaInfo?.wifiPass || "")}</code>
               <button class="btn-copy" onclick="navigator.clipboard?.writeText('${esc(g.villaInfo?.wifiPass || "")}');PartyApp.toast('已複製 Wi-Fi 密碼！')">複製</button>
             </div>
-            <div><b>📍 地址備註</b>：${esc(g.villaInfo?.address || "")}</div>
+            ${
+              g.villaInfo?.doorCode
+                ? `<div>
+                     <b>🚪 大門密碼</b>：<code>${esc(g.villaInfo.doorCode)}</code>
+                     <button class="btn-copy" onclick="navigator.clipboard?.writeText('${esc(g.villaInfo.doorCode)}');PartyApp.toast('已複製大門密碼！')">複製</button>
+                   </div>`
+                : ""
+            }
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span><b>📍 地址說明</b>：${esc(g.villaInfo?.address || "")}</span>
+              ${
+                g.villaInfo?.mapUrl && /^https?:\/\//i.test(g.villaInfo.mapUrl)
+                  ? `<a href="${esc(g.villaInfo.mapUrl)}" target="_blank" rel="noopener" class="btn-copy" style="text-decoration:none;display:inline-flex;align-items:center;gap:3px;">🗺️ Google Maps 導航</a>`
+                  : ""
+              }
+            </div>
           </div>
           ${isPreEvent ? "" : `<div class="muted-xs" style="margin-top:8px;color:#fcd34d;">${esc(g.villaInfo?.notes || "")}</div>`}
         </div>
@@ -1561,8 +1791,9 @@
       return parts.join(" ｜ ");
     },
 
-    renderChoreCheckInCard(ctx) {
+    renderChoreCheckInCard(ctx, opts = {}) {
       const { me, claims, globalCfg } = ctx;
+      const autoFold = Boolean(opts.collapsible);
       const g = { ...CFG.DEFAULTS, ...(globalCfg || {}) };
       const dayKey = g.activeDayKey || "2026-12-31";
       const checkInBadges = CFG.BADGE_CATALOG.filter((b) => !b.auto);
@@ -1573,57 +1804,82 @@
           c.status === "pending"
       );
 
+      const innerHtml = `
+        <p class="muted-xs" style="margin-bottom:8px;">
+          主動幫忙團體事務或早起現身客廳，點選下方項目請現場夥伴按確認即可入帳加分！（其餘遊戲成就徽章皆由系統自動發放）
+        </p>
+        ${
+          myPendingChores.length > 0
+            ? `<div style="margin-bottom:8px;display:flex;flex-direction:column;gap:6px;">
+                ${myPendingChores
+                  .map(
+                    (c) => `<div class="muted-xs" style="color:#fcd34d;display:flex;justify-content:space-between;align-items:center;gap:8px;background:rgba(245,158,11,0.1);padding:6px 8px;border-radius:8px;">
+                      <span>⏳ <b>${esc(c.title)}</b> 認證中：${esc(this.formatPendingApprovers(c, ctx))}</span>
+                      <button type="button" class="btn btn-ghost btn-xs" style="padding:2px 8px;font-size:11px;flex-shrink:0;" onclick="PartyApp.cancelMyPendingClaim('${esc(c.id)}')">↺ 撤回重選</button>
+                    </div>`
+                  )
+                  .join("")}
+              </div>`
+            : ""
+        }
+        <div class="bet-btn-grid">
+          ${checkInBadges
+            .map((b) => {
+              const limit = b.code === "morning_bird" ? 1 : b.maxCount || 2;
+              const used = (claims || []).filter(
+                (c) =>
+                  c.applicant_id === me.id &&
+                  c.badge_code === b.code &&
+                  c.status !== "rejected" &&
+                  (b.code === "morning_bird" ? c.day_key === dayKey : true)
+              ).length;
+              const full = used >= limit;
+              const lockedBySeason = g.seasonStatus !== "active";
+              return `
+                <button class="btn ${full ? "btn-ghost" : "btn-secondary"} btn-sm"
+                  style="text-align:left;display:flex;flex-direction:column;gap:2px;"
+                  ${full || lockedBySeason ? "disabled" : ""}
+                  onclick="PartyApp.openChoreClaimModal('${b.code}')">
+                  <span>${b.icon} <b>${esc(b.name)}</b> <small class="gold-text">+${b.points}</small></span>
+                  <span class="muted-xs" style="font-size:11px;">
+                    ${lockedBySeason ? "🔒 活動開始後開放" : `需 ${b.needWitness} 人見證 (${used}/${limit})`}
+                  </span>
+                </button>
+              `;
+            })
+            .join("")}
+        </div>
+      `;
+
+      if (autoFold) {
+        return `
+          <div class="section-card" style="margin-top:14px;">
+            <details>
+              <summary style="font-weight:800;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+                <span>🙌 神隊友互助 ＆ 早起打卡（團康進行中已收折）</span>
+                <span class="muted-xs">點擊展開 ▾</span>
+              </summary>
+              <div style="margin-top:10px;">${innerHtml}</div>
+            </details>
+          </div>
+        `;
+      }
+
       return `
         <div class="section-card" style="margin-top:14px;">
           <div class="section-title">🙌 神隊友互助 ＆ 早起打卡（6 項同伴互證）</div>
-          <p class="muted-xs" style="margin-bottom:8px;">
-            主動幫忙團體事務或早起現身客廳，點選下方項目請現場夥伴按確認即可入帳加分！（其餘遊戲成就徽章皆由系統自動發放）
-          </p>
-          ${
-            myPendingChores.length > 0
-              ? `<div style="margin-bottom:8px;display:flex;flex-direction:column;gap:4px;">
-                  ${myPendingChores
-                    .map(
-                      (c) => `<div class="muted-xs" style="color:#fcd34d;">⏳ <b>${esc(c.title)}</b> 認證中：${esc(this.formatPendingApprovers(c, ctx))}</div>`
-                    )
-                    .join("")}
-                </div>`
-              : ""
-          }
-          <div class="bet-btn-grid">
-            ${checkInBadges
-              .map((b) => {
-                const limit = b.code === "morning_bird" ? 1 : b.maxCount || 2;
-                const used = (claims || []).filter(
-                  (c) =>
-                    c.applicant_id === me.id &&
-                    c.badge_code === b.code &&
-                    c.status !== "rejected" &&
-                    (b.code === "morning_bird" ? c.day_key === dayKey : true)
-                ).length;
-                const full = used >= limit;
-                const lockedBySeason = g.seasonStatus !== "active";
-                return `
-                  <button class="btn ${full ? "btn-ghost" : "btn-secondary"} btn-sm"
-                    style="text-align:left;display:flex;flex-direction:column;gap:2px;"
-                    ${full || lockedBySeason ? "disabled" : ""}
-                    onclick="PartyApp.openChoreClaimModal('${b.code}')">
-                    <span>${b.icon} <b>${esc(b.name)}</b> <small class="gold-text">+${b.points}</small></span>
-                    <span class="muted-xs" style="font-size:11px;">
-                      ${lockedBySeason ? "🔒 12/31 開賽開放" : `需 ${b.needWitness} 人見證 (${used}/${limit})`}
-                    </span>
-                  </button>
-                `;
-              })
-              .join("")}
-          </div>
+          ${innerHtml}
         </div>
       `;
     },
 
     // ==================== 🎮 分頁一：遊戲舞台 (開賽前完全保密遊戲資訊，開賽後隨場景切換) ====================
     renderFirstLoginCheckCard(ctx, isPreEvent) {
-      const { me } = ctx;
+      const { me, globalCfg } = ctx;
+      const g = { ...CFG.DEFAULTS, ...(globalCfg || {}) };
+      const evTitle = g.eventTitle || "跨年英雄紀元";
+      const lbA = g.shareLabelA || "2026 回顧";
+      const lbB = g.shareLabelB || "2027 展望";
       const ok26 = Boolean(me.share_2026?.story && me.share_2026?.trueFact);
       const ok27 = Boolean(me.share_2027?.story && me.share_2027?.trueFact);
       const allDone = Boolean(me.push_tested && ok26 && ok27);
@@ -1635,7 +1891,7 @@
           <h3 style="margin:10px 0 6px;">${
             allDone
               ? "🎉 你的行前準備已全部完成！"
-              : "歡迎加入《跨年英雄紀元》！請先完成 2 項準備："
+              : `歡迎加入《${esc(evTitle)}》！請先完成 2 項準備：`
           }</h3>
           ${
             isPreEvent
@@ -1647,7 +1903,7 @@
 
           <div class="checklist-box" style="margin-top:12px;">
             <div class="chk-row">${me.push_tested ? "✅" : "⏳"} 1. 測試手機推播通知與音效會不會響</div>
-            <div class="chk-row">${ok26 && ok27 ? "✅" : "⏳"} 2. 填寫個人資料卡（2026 回顧 ＆ 2027 展望）</div>
+            <div class="chk-row">${ok26 && ok27 ? "✅" : "⏳"} 2. 填寫個人資料卡（${esc(lbA)} ＆ ${esc(lbB)}）</div>
           </div>
 
           <div class="grid-2-btns" style="margin-top:14px;">
@@ -1736,12 +1992,16 @@
           ${this.renderChoreCheckInCard(ctx)}
         `;
       }
-      // theme or red_packet
+      // theme or red_packet (c-4: 當玩家已加入進行中的團康主題房時，自動收折下方互助打卡雜訊！)
+      const activeTheme = window.ThemeGamesUI.getActiveSession(ctx.themeSessions);
+      const inActiveTheme =
+        scene === "red_packet" ||
+        Boolean(activeTheme && (activeTheme.participants || []).includes(ctx.me.id));
       return `
         ${firstLoginBanner}
         ${window.ThemeGamesUI.renderStage(ctx)}
         ${this.renderHiddenMissionsDrawer(ctx, false)}
-        ${this.renderChoreCheckInCard(ctx)}
+        ${this.renderChoreCheckInCard(ctx, { collapsible: inActiveTheme })}
       `;
     },
 
@@ -1786,7 +2046,9 @@
             <div class="mission-cards-list">
               ${(myM.cards || [])
                 .map((c, idx) => {
-                  const existingClaim = myClaims.find((cl) => cl.mission_card_id === c.id);
+                  const existingClaim = myClaims.find(
+                    (cl) => cl.mission_card_id === c.id && cl.status !== "rejected"
+                  );
                   return `
                     <div class="mission-card ${existingClaim?.status === "approved" ? "done" : ""}">
                       <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -1800,11 +2062,14 @@
                             ? `<button class="btn btn-secondary btn-xs" onclick="PartyApp.rerollSingleMission(${idx})">🔄 換掉這張 (剩 ${rerollsLeft} 次)</button>`
                             : ""
                           : existingClaim
-                          ? `<div class="muted-xs">狀態：${
-                              existingClaim.status === "approved"
-                                ? "✅ 已認證入帳！"
-                                : `⏳ ${esc(this.formatPendingApprovers(existingClaim, ctx))}`
-                            }</div>`
+                          ? existingClaim.status === "approved"
+                            ? `<div class="muted-xs" style="color:#6ee7b7;font-weight:700;">✅ 已認證入帳！</div>`
+                            : `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+                                 <span class="muted-xs" style="color:#fcd34d;">⏳ ${esc(this.formatPendingApprovers(existingClaim, ctx))}</span>
+                                 <button type="button" class="btn btn-ghost btn-xs" style="padding:3px 9px;font-size:11.5px;" onclick="PartyApp.cancelMyPendingClaim('${esc(existingClaim.id)}')">
+                                   ↺ 撤回重選見證人
+                                 </button>
+                               </div>`
                           : `<button class="btn btn-gold btn-xs" onclick="PartyApp.openMissionClaimModal('${c.id}')">🙋 我完成了！發起當事人＆見證認證</button>`
                       }
                     </div>
@@ -1849,17 +2114,31 @@
           ${list
             .map((c) => {
               const applicant = playerMap[c.applicant_id] || { name: "夥伴" };
-              const roleLabel = c.target_id === ctx.me.id ? "互動當事人" : "現場見證人";
+              const isTarget = c.target_id === ctx.me.id;
+              const roleLabel = isTarget ? "互動當事人" : "現場見證人";
               return `
-                <div class="verify-item">
-                  <div>
-                    <span class="hh-tag">請你認證 (${roleLabel})</span>
-                    <b>${esc(applicant.name)}</b> 申請達成：${esc(c.title)} (+${c.points} PT)
-                    ${c.photo_url === "LINE_ALBUM" ? `<span class="q-tag q-ok" style="margin-left:4px;">📸 已傳 LINE 相簿</span>` : ""}
+                <div class="verify-prominent-card">
+                  <div style="display:flex;align-items:center;gap:10px;">
+                    ${avatarHtml(applicant, 42)}
+                    <div style="min-width:0;flex:1;">
+                      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                        <span class="hh-tag" style="margin-left:0;">🤝 認證邀請（${roleLabel}）</span>
+                        <span class="gold-text" style="font-size:12.5px;">+${c.points} PT</span>
+                        ${c.photo_url === "LINE_ALBUM" ? `<span class="q-tag q-ok">📸 已傳 LINE 相簿</span>` : ""}
+                      </div>
+                      <div style="margin-top:4px;font-size:14px;">
+                        <b>${esc(applicant.name)}</b> 請你確認達成：<b>${esc(c.title)}</b>
+                      </div>
+                    </div>
                   </div>
-                  <button class="btn btn-emerald btn-xs" onclick="PartyApp.approveClaim('${c.id}', '${c.target_id === ctx.me.id ? "target" : "witness"}')">
-                    ✅ 確有此事
-                  </button>
+                  <div class="grid-2-btns" style="margin-top:10px;">
+                    <button class="btn btn-ghost btn-xs" onclick="PartyApp.rejectClaim('${esc(c.id)}')">
+                      ✕ 點錯人／退回重選
+                    </button>
+                    <button class="btn btn-emerald btn-sm" onclick="PartyApp.approveClaim('${esc(c.id)}', '${isTarget ? "target" : "witness"}')">
+                      ✅ 確有此事・幫他認證
+                    </button>
+                  </div>
                 </div>
               `;
             })
@@ -1868,69 +2147,278 @@
       `;
     },
 
-    // --- 🏆 1/3 Viewer 最終結算總榜與大腿揭曉畫面 ---
+    // --- 🏆 Viewer 終局 4 幕逐步頒獎典禮 ＆ 個人榮耀戰績紀念卡 ---
+    async setCeremonyStage(stageNum) {
+      const next = Math.min(4, Math.max(1, Number(stageNum) || 1));
+      const ctx = this.getContext();
+      const g = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}), ceremonyStage: next };
+      this.localCeremonyPreviewStage = 0;
+      await window.PartyDB.upsert("config", [{ key: "global", value: g }]);
+      if (next === 4) {
+        window.PartyFX.playTone("win");
+        window.PartyFX.haptic("heavy");
+        window.PartyFX.launchFireworksShow({ redPackets: false, durationMs: 3800 });
+      } else {
+        window.PartyFX.playTone("bell");
+      }
+      await this.refreshAll();
+    },
+
     renderViewerSettlementStage(ctx) {
-      const { scoreboard, badgesAwarded, players } = ctx;
+      const { scoreboard, badgesAwarded, players, me, globalCfg, schedule, isGmUnlocked } = ctx;
+      const g = { ...CFG.DEFAULTS, ...(globalCfg || {}) };
+      const evTitle = g.eventTitle || "跨年英雄紀元";
+      const dateRange = window.PartyEngine.getScheduleDateRangeLabel(schedule, g);
+      const gmStage = Math.min(4, Math.max(1, Number(g.ceremonyStage) || 1));
+      const viewStage =
+        gmStage >= 4 && this.localCeremonyPreviewStage >= 1 && this.localCeremonyPreviewStage <= 4
+          ? this.localCeremonyPreviewStage
+          : gmStage;
+
       const crowns = (badgesAwarded || []).filter((b) => b.badge_code.startsWith("crown_"));
+      const myBadges = (badgesAwarded || []).filter((b) => b.player_id === me?.id);
       const playerMap = {};
       (players || []).forEach((p) => (playerMap[p.id] = p));
+
+      const sortedFinal = scoreboard.sortedFinal || [];
+      const myRow = scoreboard.byId[me?.id] || sortedFinal[0] || null;
+      const podium23 = sortedFinal.filter((r) => r.finalRank === 2 || r.finalRank === 3);
+      const champions = sortedFinal.filter((r) => r.finalRank === 1);
+
+      const stageNames = [
+        { s: 1, label: "第1幕 王冠" },
+        { s: 2, label: "第2幕 大腿網" },
+        { s: 3, label: "第3幕 亞季軍" },
+        { s: 4, label: "第4幕 總冠軍" },
+      ];
 
       return `
         <div class="nye-fireworks-card" style="margin-bottom:14px;">
           <div style="font-size:34px;">🏆 👑 🎉</div>
-          <h2 style="color:#fde047;margin:4px 0;">《跨年英雄紀元》終局總決賽戰報</h2>
-          <p class="muted-xs">全場計分已永久鎖定（Viewer 模式）｜ 秘密大腿(×0.5) ＆ 二腿(×0.3) 正式全面揭曉！</p>
+          <h2 style="color:#fde047;margin:4px 0;">《${esc(evTitle)}》終局頒獎典禮</h2>
+          <p class="muted-xs">全場計分已鎖定（Viewer 典禮模式）｜ 進度：<b>第 ${viewStage} / 4 幕</b></p>
+
+          ${
+            isGmUnlocked
+              ? `<div class="gm-inline-bar" style="margin-top:12px;text-align:left;">
+                   <div class="sub-label" style="color:#fde047;">🎬 主辦人頒獎典禮控場台（點擊同步切換全場手機畫面）：</div>
+                   <div class="ceremony-steps-grid" style="margin-top:6px;">
+                     ${stageNames
+                       .map(
+                         (st) => `<button type="button" class="btn ${gmStage === st.s ? "btn-gold" : "btn-secondary"} btn-xs" onclick="PartyApp.setCeremonyStage(${st.s})">${st.label}</button>`
+                       )
+                       .join("")}
+                   </div>
+                   ${
+                     gmStage < 4
+                       ? `<button type="button" class="btn btn-gold btn-sm" style="width:100%;margin-top:8px;" onclick="PartyApp.setCeremonyStage(${gmStage + 1})">
+                            🥁 揭曉下一幕 ➜ ${stageNames[gmStage]?.label || "總冠軍"}！
+                          </button>`
+                       : ""
+                   }
+                 </div>`
+              : gmStage >= 4
+              ? `<div class="ceremony-steps-grid" style="margin-top:10px;">
+                   ${stageNames
+                     .map(
+                       (st) => `<button type="button" class="btn ${viewStage === st.s ? "btn-gold" : "btn-secondary"} btn-xs" onclick="PartyApp.localCeremonyPreviewStage=${st.s};PartyApp.render();">${st.label}</button>`
+                     )
+                     .join("")}
+                 </div>`
+              : ""
+          }
         </div>
 
-        ${
-          crowns.length > 0
-            ? `<div class="section-card" style="margin-bottom:14px;">
-                <div class="section-title">👑 四大傳奇唯一王冠得主 (+80 PT)</div>
-                ${crowns
+        <!-- 第 1 幕：四大傳奇唯一王冠得主 -->
+        <div class="section-card" style="margin-bottom:14px;">
+          <div class="section-title">👑 第 1 幕｜四大傳奇唯一王冠得主 (+80 PT)</div>
+          ${
+            crowns.length > 0
+              ? crowns
                   .map(
                     (c) => `<div class="history-row">
-                      <span>👑 <b>${esc(c.title)}</b> — ${esc(playerMap[c.player_id]?.name || c.player_id)}</span>
+                      <span>👑 <b>${esc(c.title)}</b> — <b class="gold-text">${esc(playerMap[c.player_id]?.name || c.player_id)}</b></span>
                       <span class="muted-xs">${esc(c.detail)}</span>
                     </div>`
                   )
+                  .join("")
+              : `<div class="muted-xs">本場尚無符合條件之王冠紀錄</div>`
+          }
+        </div>
+
+        ${
+          viewStage < 2
+            ? `<div class="empty-card">
+                 <div style="font-size:32px;margin-bottom:6px;">🥁🤫</div>
+                 <div style="font-weight:800;color:#fde047;">下一幕即將揭曉：全場秘密大腿(×0.5) ＆ 二腿(×0.3) 關係網！</div>
+                 <div class="muted-xs" style="margin-top:4px;">快猜猜這幾天到底是誰在暗中抱你的大腿…等待主持人揭曉！</div>
+               </div>`
+            : `
+              <!-- 第 2 幕：秘密大腿關係網大公開 -->
+              <div class="section-card" style="margin-bottom:14px;">
+                <div class="section-title">🦵 第 2 幕｜全場秘密大腿(×0.5) ＆ 二腿(×0.3) 真相公開</div>
+                ${(scoreboard.sortedRaw || [])
+                  .map(
+                    (r) => `<div class="history-row" style="flex-wrap:wrap;">
+                      <span><b>${esc(r.name)}</b> <small class="muted-xs">(原始 ${window.PartyEngine.fmtPt(r.baseScore)} PT)</small></span>
+                      <span class="muted-xs">🦵大腿：<b class="gold-text">${esc(r.thighName)}</b> (+${window.PartyEngine.fmtPt(r.thighBonus)}) ｜ 🦿二腿：<b class="cyan-text">${esc(r.secondThighName)}</b> (+${window.PartyEngine.fmtPt(r.secondBonus)})</span>
+                    </div>`
+                  )
                   .join("")}
-              </div>`
+              </div>
+            `
+        }
+
+        ${
+          viewStage === 2
+            ? `<div class="empty-card">
+                 <div style="font-size:32px;margin-bottom:6px;">🥈🥉</div>
+                 <div style="font-weight:800;color:#fde047;">加計大腿分後大洗牌！即將揭曉決賽【季軍 #3 ＆ 亞軍 #2】！</div>
+               </div>`
             : ""
         }
 
-        <div class="section-card">
-          <div class="section-title">📊 最終決賽總排名（原始分 ＋ 大腿×0.5 ＋ 二腿×0.3）</div>
-          ${scoreboard.sortedFinal
-            .map((row) => {
-              const rankDelta = row.rawRank - row.finalRank;
-              const deltaBadge =
-                rankDelta > 0
-                  ? `<span style="color:#6ee7b7;font-size:12px;">▲ 逆轉 +${rankDelta} 名</span>`
-                  : rankDelta < 0
-                  ? `<span style="color:#fda4af;font-size:12px;">▼ ${rankDelta} 名</span>`
-                  : `<span class="muted-xs">持平</span>`;
-              return `
-                <div class="final-rank-card ${row.finalRank === 1 ? "champion" : ""}">
-                  <div class="fr-top">
-                    <div style="display:flex;align-items:center;gap:10px;">
-                      <span class="rank-num">#${row.finalRank}</span>
-                      ${avatarHtml(row.player, 42)}
-                      <div>
-                        <b>${esc(row.name)}</b> ${deltaBadge}
-                        <div class="muted-xs">原始排名 #${row.rawRank}（原始分 ${window.PartyEngine.fmtPt(row.baseScore)} PT）</div>
-                      </div>
-                    </div>
-                    <div class="final-pt">${window.PartyEngine.fmtPt(row.finalScore)} <small>PT</small></div>
-                  </div>
-                  <div class="fr-thighs">
-                    <span>🦵 大腿：<b>${esc(row.thighName)}</b> (+${window.PartyEngine.fmtPt(row.thighBonus)})</span>
-                    <span>🦿 二腿：<b>${esc(row.secondThighName)}</b> (+${window.PartyEngine.fmtPt(row.secondBonus)})</span>
-                  </div>
+        ${
+          viewStage >= 3 && viewStage < 4
+            ? `
+              <div class="section-card" style="margin-bottom:14px;">
+                <div class="section-title">🥈🥉 第 3 幕｜決賽亞軍 ＆ 季軍得主揭曉！</div>
+                ${
+                  podium23.length > 0
+                    ? podium23
+                        .sort((a, b) => b.finalRank - a.finalRank)
+                        .map((row) => {
+                          const rankDelta = row.rawRank - row.finalRank;
+                          const deltaBadge =
+                            rankDelta > 0
+                              ? `<span style="color:#6ee7b7;font-size:12px;">▲ 逆轉 +${rankDelta} 名</span>`
+                              : rankDelta < 0
+                              ? `<span style="color:#fda4af;font-size:12px;">▼ ${rankDelta} 名</span>`
+                              : `<span class="muted-xs">持平</span>`;
+                          return `
+                            <div class="final-rank-card">
+                              <div class="fr-top">
+                                <div style="display:flex;align-items:center;gap:10px;">
+                                  <span class="rank-num">${row.finalRank === 2 ? "🥈#2" : "🥉#3"}</span>
+                                  ${avatarHtml(row.player, 42)}
+                                  <div>
+                                    <b>${esc(row.name)}</b> ${deltaBadge}
+                                    <div class="muted-xs">原始排名 #${row.rawRank}（原始 ${window.PartyEngine.fmtPt(row.baseScore)} PT）</div>
+                                  </div>
+                                </div>
+                                <div class="final-pt">${window.PartyEngine.fmtPt(row.finalScore)} <small>PT</small></div>
+                              </div>
+                            </div>
+                          `;
+                        })
+                        .join("")
+                    : `<div class="muted-xs">等待最終總冠軍一併揭曉！</div>`
+                }
+                <div class="empty-card" style="margin-top:12px;">
+                  <div style="font-size:34px;margin-bottom:4px;">🥁🔥👑</div>
+                  <div style="font-weight:900;font-size:17px;color:#fef08a;">全場屏息！！總冠軍 MVP 即將揭曉！！</div>
                 </div>
-              `;
-            })
-            .join("")}
-        </div>
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          viewStage >= 4
+            ? `
+              <!-- 第 4 幕：總冠軍登基 ＋ 個人榮耀戰績紀念卡 ＋ 完整總排名 -->
+              ${
+                champions.length > 0
+                  ? `<div class="trophy-mvp-banner">
+                       <div style="font-size:42px;line-height:1.1;">👑🎆🏆</div>
+                       <div class="eyebrow-tag" style="margin-top:6px;">GRAND CHAMPION MVP</div>
+                       <h2 style="font-size:26px;color:#fef08a;margin:8px 0 4px;">
+                         ${champions.map((c) => esc(c.name)).join("、")}
+                       </h2>
+                       <div style="font-size:20px;font-weight:900;color:#fff;">
+                         決賽總積分 ${window.PartyEngine.fmtPt(champions[0].finalScore)} PT 稱霸全場！
+                       </div>
+                       <button type="button" class="btn btn-secondary btn-xs" style="margin-top:10px;" onclick="window.PartyFX.playFirecrackers();window.PartyFX.launchFireworksShow({redPackets:false,durationMs:3600});">
+                         🎆 為總冠軍施放禮砲煙火！
+                       </button>
+                     </div>`
+                  : ""
+              }
+
+              ${
+                myRow
+                  ? `<div class="souvenir-card">
+                       <div class="souvenir-header">
+                         <span class="eyebrow-tag">📸 個人榮耀戰績紀念卡（可截圖分享限動！）</span>
+                         <div class="muted-xs" style="margin-top:4px;">《${esc(evTitle)}》｜ ${esc(dateRange)}</div>
+                       </div>
+                       <div class="souvenir-hero">
+                         ${avatarHtml(myRow.player, 64)}
+                         <div style="text-align:left;min-width:0;flex:1;">
+                           <div style="font-size:20px;font-weight:900;color:#fff;">${esc(myRow.name)}</div>
+                           <div class="gold-text" style="font-size:15px;">🏆 總決賽排名 第 #${myRow.finalRank} / ${scoreboard.totalPlayers} 名</div>
+                           <div class="muted-xs">累積互動夥伴 ${myRow.interactionCount || 0} 人 ｜ 榮耀徽章 ${myBadges.length} 枚</div>
+                         </div>
+                         <div style="text-align:right;">
+                           <div class="muted-xs">決賽總分</div>
+                           <div style="font-size:26px;font-weight:900;color:#fef08a;line-height:1.1;">${window.PartyEngine.fmtPt(myRow.finalScore)}</div>
+                           <div class="muted-xs">PT</div>
+                         </div>
+                       </div>
+                       <div class="souvenir-grid">
+                         <div class="souvenir-stat"><span>💰 個人原始分</span><b>${window.PartyEngine.fmtPt(myRow.baseScore)} PT (#${myRow.rawRank})</b></div>
+                         <div class="souvenir-stat"><span>🦵 秘密大腿助攻</span><b>${esc(myRow.thighName)} (+${window.PartyEngine.fmtPt(myRow.thighBonus)})</b></div>
+                         <div class="souvenir-stat"><span>🦿 秘密二腿助攻</span><b>${esc(myRow.secondThighName)} (+${window.PartyEngine.fmtPt(myRow.secondBonus)})</b></div>
+                       </div>
+                       ${
+                         myBadges.length > 0
+                           ? `<div class="part-chips" style="margin-top:10px;justify-content:center;">
+                                ${myBadges
+                                  .map((b) => `<span class="badge-earned">🏅 ${esc(b.title)}</span>`)
+                                  .join("")}
+                              </div>`
+                           : ""
+                       }
+                     </div>`
+                  : ""
+              }
+
+              <div class="section-card">
+                <div class="section-title">📊 最終決賽完整總排名（原始分 ＋ 大腿×0.5 ＋ 二腿×0.3）</div>
+                ${sortedFinal
+                  .map((row) => {
+                    const rankDelta = row.rawRank - row.finalRank;
+                    const deltaBadge =
+                      rankDelta > 0
+                        ? `<span style="color:#6ee7b7;font-size:12px;">▲ 逆轉 +${rankDelta} 名</span>`
+                        : rankDelta < 0
+                        ? `<span style="color:#fda4af;font-size:12px;">▼ ${rankDelta} 名</span>`
+                        : `<span class="muted-xs">持平</span>`;
+                    return `
+                      <div class="final-rank-card ${row.finalRank === 1 ? "champion" : ""}">
+                        <div class="fr-top">
+                          <div style="display:flex;align-items:center;gap:10px;">
+                            <span class="rank-num">#${row.finalRank}</span>
+                            ${avatarHtml(row.player, 42)}
+                            <div>
+                              <b>${esc(row.name)}</b> ${deltaBadge}
+                              <div class="muted-xs">原始排名 #${row.rawRank}（原始分 ${window.PartyEngine.fmtPt(row.baseScore)} PT）</div>
+                            </div>
+                          </div>
+                          <div class="final-pt">${window.PartyEngine.fmtPt(row.finalScore)} <small>PT</small></div>
+                        </div>
+                        <div class="fr-thighs">
+                          <span>🦵 大腿：<b>${esc(row.thighName)}</b> (+${window.PartyEngine.fmtPt(row.thighBonus)})</span>
+                          <span>🦿 二腿：<b>${esc(row.secondThighName)}</b> (+${window.PartyEngine.fmtPt(row.secondBonus)})</span>
+                        </div>
+                      </div>
+                    `;
+                  })
+                  .join("")}
+              </div>
+            `
+            : ""
+        }
       `;
     },
 
@@ -2034,15 +2522,21 @@
 
     async testPushAndSound() {
       const ctx = this.getContext();
-      await window.PartyFX.requestNotifyPermission();
-      await window.PartyFX.notify(
-        "🎉 跨年英雄紀元推播測試成功！",
-        `${ctx.me.name}，你的手機通知與音效已就緒！`
-      );
+      if (!ctx.me) return;
+      // 1. 立即於點擊手勢當下解鎖音效並播放勝利鈴聲＋重震動回饋（100% 相容 Android & iOS！）
+      window.PartyFX.unlockAudio();
+      window.PartyFX.playTone("win");
+      window.PartyFX.haptic("heavy");
+      try {
+        await window.PartyFX.notify(
+          "🎉 跨年英雄紀元推播測試成功！",
+          `${ctx.me.name}，你的手機通知橫幅與派對音效皆已就緒！`
+        );
+      } catch (_) {}
       await window.PartyDB.update("players", `id=eq.${encodeURIComponent(ctx.me.id)}`, {
         push_tested: true,
       });
-      this.toast("🔔 測試音效與通知已發送！");
+      this.toast("✅ 測試音效與系統推播通知已發送！");
       await this.refreshAll();
     },
 
@@ -2081,7 +2575,7 @@
       const ctx = this.getContext();
       const dayKey = ctx.globalCfg?.activeDayKey || "2026-12-31";
       const completedIds = (ctx.claims || [])
-        .filter((c) => c.applicant_id === ctx.me.id && c.mission_card_id)
+        .filter((c) => c.applicant_id === ctx.me.id && c.mission_card_id && c.status !== "rejected")
         .map((c) => c.mission_card_id);
       const cards = window.PartyEngine.drawMissionCards(ctx.questionBanks, completedIds, 3);
       await window.PartyDB.upsert(
@@ -2221,54 +2715,111 @@
     },
 
     async submitMissionClaim(cardId, cardTag, needPhoto) {
-      const ctx = this.getContext();
-      const targetId = document.getElementById("clm-target")?.value || "";
-      const witnessIds = [...document.querySelectorAll(".msn-wit-chk:checked")]
-        .map((el) => el.value)
-        .filter((id) => id && id !== targetId);
-      if (!targetId || witnessIds.length < 1) {
-        this.toast("請至少勾選 1 位「當事人以外」的現場見證人喔！");
-        return;
-      }
-      let photoUrl = "";
-      if (needPhoto) {
-        const lineChecked = Boolean(document.getElementById("clm-line-chk")?.checked);
-        if (!lineChecked) {
-          this.toast("📸 此為拍照類任務，請先將照片傳到 LINE 群組相簿並打勾確認！");
+      return window.PartyDB.withLock(`msn_claim_${cardId}`, async () => {
+        const ctx = this.getContext();
+        const targetId = document.getElementById("clm-target")?.value || "";
+        const witnessIds = [...document.querySelectorAll(".msn-wit-chk:checked")]
+          .map((el) => el.value)
+          .filter((id) => id && id !== targetId);
+        if (!targetId || witnessIds.length < 1) {
+          this.toast("請至少勾選 1 位「當事人以外」的現場見證人喔！");
           return;
         }
-        photoUrl = "LINE_ALBUM";
-      }
+        let photoUrl = "";
+        if (needPhoto) {
+          const lineChecked = Boolean(document.getElementById("clm-line-chk")?.checked);
+          if (!lineChecked) {
+            this.toast("📸 此為拍照類任務，請先將照片傳到 LINE 群組相簿並打勾確認！");
+            return;
+          }
+          photoUrl = "LINE_ALBUM";
+        }
 
-      const g = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}) };
-      const dayKey = g.activeDayKey || "2026-12-31";
-      const claimId = `clm_${ctx.me.id}_${cardId}_${dayKey}`;
+        const g = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}) };
+        const dayKey = g.activeDayKey || "2026-12-31";
+        // 防重複申請檢查
+        const dup = (ctx.claims || []).some(
+          (c) =>
+            c.applicant_id === ctx.me.id &&
+            c.mission_card_id === cardId &&
+            c.day_key === dayKey &&
+            c.status !== "rejected"
+        );
+        if (dup) {
+          window.PartyGamesUI.closeModal();
+          await this.refreshAll();
+          return;
+        }
+        const claimId = `clm_${ctx.me.id}_${cardId}_${dayKey}_${Date.now().toString(36)}`;
 
-      await window.PartyDB.upsert(
-        "claims",
-        [
-          {
-            id: claimId,
-            claim_type: "hidden_mission",
-            applicant_id: ctx.me.id,
-            title: `隱藏任務【${cardTag}】`,
-            points: Number(g.hiddenMissionPoints) || 35,
-            target_id: targetId,
-            witness_ids: witnessIds,
-            required_approvals: 2,
-            photo_url: photoUrl,
-            day_key: dayKey,
-            mission_card_id: cardId,
-            status: "pending",
-          },
-        ],
-        { ignoreDuplicates: true }
-      );
+        await window.PartyDB.upsert(
+          "claims",
+          [
+            {
+              id: claimId,
+              claim_type: "hidden_mission",
+              applicant_id: ctx.me.id,
+              title: `隱藏任務【${cardTag}】`,
+              points: Number(g.hiddenMissionPoints) || 35,
+              target_id: targetId,
+              witness_ids: witnessIds,
+              required_approvals: 2,
+              photo_url: photoUrl,
+              day_key: dayKey,
+              mission_card_id: cardId,
+              status: "pending",
+            },
+          ],
+          { ignoreDuplicates: true }
+        );
 
-      window.PartyGamesUI.closeModal();
-      window.PartyFX.playTone("bell");
-      this.toast("📨 已送出認證請求！請當事人與見證人按一下確認即入帳！");
-      await this.refreshAll();
+        window.PartyGamesUI.closeModal();
+        window.PartyFX.playTone("bell");
+        this.toast("📨 已送出認證請求！若選錯人可隨時點「撤回重選見證人」！");
+        await this.refreshAll();
+      });
+    },
+
+    // c-2: 申請人主動撤回重選見證人（徹底移除該筆申請與審核紀錄，原本被點名的人將立刻完全看不到此訊息！）
+    async cancelMyPendingClaim(claimId) {
+      return window.PartyDB.withLock(`cancel_clm_${claimId}`, async () => {
+        const ctx = this.getContext();
+        const claim = (ctx.claims || []).find((c) => c.id === claimId);
+        if (!claim || claim.applicant_id !== ctx.me?.id || claim.status !== "pending") {
+          await this.refreshAll();
+          return;
+        }
+        await window.PartyDB.remove(
+          "claim_approvals",
+          `claim_id=eq.${encodeURIComponent(claimId)}`
+        );
+        await window.PartyDB.remove("claims", `id=eq.${encodeURIComponent(claimId)}`);
+        this.seenClaimIds.delete(claimId);
+        window.PartyFX.haptic("medium");
+        this.toast("↺ 已撤回該筆認證申請！原見證人畫面已同步移除，你可以重新選擇見證人囉！");
+        await this.refreshAll();
+      });
+    },
+
+    // 被點名的當事人／見證人若發現對方點錯人，可一鍵退回重選（同樣徹底移除不卡死申請人！）
+    async rejectClaim(claimId) {
+      return window.PartyDB.withLock(`reject_clm_${claimId}`, async () => {
+        const ctx = this.getContext();
+        const claim = (ctx.claims || []).find((c) => c.id === claimId);
+        if (!claim || claim.status !== "pending") {
+          await this.refreshAll();
+          return;
+        }
+        await window.PartyDB.remove(
+          "claim_approvals",
+          `claim_id=eq.${encodeURIComponent(claimId)}`
+        );
+        await window.PartyDB.remove("claims", `id=eq.${encodeURIComponent(claimId)}`);
+        this.seenClaimIds.delete(claimId);
+        window.PartyFX.haptic("medium");
+        this.toast("↩️ 已退回該筆認證邀請，方便對方重新選擇正確見證人！");
+        await this.refreshAll();
+      });
     },
 
     // --- 民宿神隊友 & 晨間陽光鳥申請 ---
@@ -2375,83 +2926,98 @@
       await this.refreshAll();
     },
 
-    // --- 當事人／見證人按下同意認證（冪等防呆自動派分！） ---
+    // --- 當事人／見證人按下同意認證（CAS + 冪等防呆自動派分！） ---
     async approveClaim(claimId, role) {
-      const ctx = this.getContext();
-      const claim = (ctx.claims || []).find((c) => c.id === claimId);
-      if (!claim || claim.status !== "pending") return;
-
-      await window.PartyDB.upsert(
-        "claim_approvals",
-        [
-          {
-            id: `${claimId}_${ctx.me.id}`,
-            claim_id: claimId,
-            approver_id: ctx.me.id,
-            role,
-          },
-        ],
-        { ignoreDuplicates: true }
-      );
-
-      // 重新撈取最新該筆 claim 的所有有效同意票，檢查是否達標
-      const approvals = await window.PartyDB.select(
-        "claim_approvals",
-        `claim_id=eq.${encodeURIComponent(claimId)}`
-      );
-      const approverIds = new Set((approvals || []).map((a) => a.approver_id));
-
-      let passed = false;
-      if (claim.claim_type === "hidden_mission") {
-        const hasTarget = claim.target_id && approverIds.has(claim.target_id);
-        const witnessApproved = [...approverIds].filter(
-          (id) => id !== claim.target_id && id !== claim.applicant_id
+      return window.PartyDB.withLock(`approve_clm_${claimId}`, async () => {
+        const ctx = this.getContext();
+        // 先重新確認該筆 claim 是否仍存在且未撤回！
+        const freshClaims = await window.PartyDB.select(
+          "claims",
+          `id=eq.${encodeURIComponent(claimId)}`
         );
-        passed = Boolean(hasTarget && witnessApproved.length >= 1);
-      } else {
-        const validApprovers = [...approverIds].filter((id) => id !== claim.applicant_id);
-        passed = validApprovers.length >= (claim.required_approvals || 1);
-      }
-
-      if (passed) {
-        await window.PartyDB.update("claims", `id=eq.${encodeURIComponent(claimId)}`, {
-          status: "approved",
-        });
-
-        if (claim.badge_code) {
-          await window.PartyEngine.awardBadgeOnce(
-            `${claim.badge_code}_${claimId}`,
-            claim.badge_code,
-            claim.applicant_id,
-            claim.points,
-            claim.title,
-            "同伴見證認證通過",
-            claim.day_key
-          );
-        } else {
-          await window.PartyDB.upsert(
-            "ledger",
-            [
-              {
-                id: `claim_reward_${claim.id}`,
-                player_id: claim.applicant_id,
-                delta: Number(claim.points) || 35,
-                category: "mission",
-                reason: `🕵️ 達成${claim.title}`,
-                day_key: claim.day_key,
-                meta: { claimId: claim.id },
-              },
-            ],
-            { ignoreDuplicates: true }
-          );
+        const claim = freshClaims && freshClaims[0];
+        if (!claim || claim.status !== "pending") {
+          this.toast("ℹ️ 該筆認證申請已被撤回或已完成結算！");
+          await this.refreshAll();
+          return;
         }
-        window.PartyFX.playTone("win");
-      } else {
-        window.PartyFX.haptic("medium");
-      }
 
-      this.toast("✅ 已送出你的認證！");
-      await this.refreshAll();
+        await window.PartyDB.upsert(
+          "claim_approvals",
+          [
+            {
+              id: `${claimId}_${ctx.me.id}`,
+              claim_id: claimId,
+              approver_id: ctx.me.id,
+              role,
+            },
+          ],
+          { ignoreDuplicates: true }
+        );
+
+        // 重新撈取最新該筆 claim 的所有有效同意票，檢查是否達標
+        const approvals = await window.PartyDB.select(
+          "claim_approvals",
+          `claim_id=eq.${encodeURIComponent(claimId)}`
+        );
+        const approverIds = new Set((approvals || []).map((a) => a.approver_id));
+
+        let passed = false;
+        if (claim.claim_type === "hidden_mission") {
+          const hasTarget = claim.target_id && approverIds.has(claim.target_id);
+          const witnessApproved = [...approverIds].filter(
+            (id) => id !== claim.target_id && id !== claim.applicant_id
+          );
+          passed = Boolean(hasTarget && witnessApproved.length >= 1);
+        } else {
+          const validApprovers = [...approverIds].filter((id) => id !== claim.applicant_id);
+          passed = validApprovers.length >= (claim.required_approvals || 1);
+        }
+
+        if (passed) {
+          const tx = await window.PartyDB.transactRow("claims", claimId, (cur) => {
+            if (!cur || cur.status !== "pending") return undefined;
+            cur.status = "approved";
+            return cur;
+          });
+
+          if (tx.committed) {
+            if (claim.badge_code) {
+              await window.PartyEngine.awardBadgeOnce(
+                `${claim.badge_code}_${claimId}`,
+                claim.badge_code,
+                claim.applicant_id,
+                claim.points,
+                claim.title,
+                "同伴見證認證通過",
+                claim.day_key
+              );
+            } else {
+              await window.PartyDB.upsert(
+                "ledger",
+                [
+                  {
+                    id: `claim_reward_${claim.id}`,
+                    player_id: claim.applicant_id,
+                    delta: Number(claim.points) || 35,
+                    category: "mission",
+                    reason: `🕵️ 達成${claim.title}`,
+                    day_key: claim.day_key,
+                    meta: { claimId: claim.id },
+                  },
+                ],
+                { ignoreDuplicates: true }
+              );
+            }
+          }
+          window.PartyFX.playTone("win");
+        } else {
+          window.PartyFX.haptic("medium");
+        }
+
+        this.toast("✅ 已送出你的認證！");
+        await this.refreshAll();
+      });
     },
   };
 
