@@ -1095,9 +1095,15 @@
 
       // 保存目前頁面捲軸位置、內部清單捲軸、展開的 <details>、勾選框與尚未送出的欄位 (dirty inputs)
       const prevWinY = window.scrollY;
-      const savedListScrolls = [...root.querySelectorAll(".create-game-list")].map(
-        (el) => el.scrollTop
-      );
+      // 記住所有可捲動區塊（含 GM 題庫清單 .bank-list、左右滑動的分類選單 .gm-nav）的上下與左右捲軸位置
+      const SCROLL_KEEP_SELECTOR = ".create-game-list, .bank-list, .gm-nav, [data-scroll-key]";
+      const scrollKeyOf = (el, idx) => el.dataset.scrollKey || `${el.className.split(" ")[0]}#${idx}`;
+      const savedListScrolls = {};
+      root.querySelectorAll(SCROLL_KEEP_SELECTOR).forEach((el, idx) => {
+        if (el.scrollTop || el.scrollLeft) {
+          savedListScrolls[scrollKeyOf(el, idx)] = [el.scrollTop, el.scrollLeft];
+        }
+      });
       const savedDrafts = {};
       const savedChecks = {};
       root.querySelectorAll("input[id], textarea[id], select[id]").forEach((el) => {
@@ -1211,8 +1217,12 @@
         openDetailsIdx.forEach((idx) => {
           if (newDetails[idx]) newDetails[idx].open = true;
         });
-        root.querySelectorAll(".create-game-list").forEach((el, idx) => {
-          if (savedListScrolls[idx] !== undefined) el.scrollTop = savedListScrolls[idx];
+        root.querySelectorAll(SCROLL_KEEP_SELECTOR).forEach((el, idx) => {
+          const saved = savedListScrolls[scrollKeyOf(el, idx)];
+          if (saved) {
+            el.scrollTop = saved[0];
+            el.scrollLeft = saved[1];
+          }
         });
         Object.entries(savedDrafts).forEach(([id, val]) => {
           const el = document.getElementById(id);

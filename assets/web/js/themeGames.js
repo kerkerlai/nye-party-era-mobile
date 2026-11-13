@@ -502,7 +502,9 @@
       const st = session.state || { subMode: "poll", qIdx: 0, revealed: false };
       const joinedPlayers = (session.participants || []).map((id) => playerMap[id]).filter(Boolean);
       const list = banks.pollQuestions || [];
-      const curQ = st.customQ || list[(st.qIdx || 0) % Math.max(1, list.length)] || { q: "在場誰最會帶氣氛？" };
+      const qPos = (st.qIdx || 0) % Math.max(1, list.length);
+      const qRealIdx = Array.isArray(st.order) && st.order.length === list.length ? st.order[qPos] : qPos;
+      const curQ = st.customQ || list[qRealIdx] || { q: "在場誰最會帶氣氛？" };
       const stepKey = `poll_${st.roundSeq || 0}`;
       const resps = (themeResponses || []).filter(
         (r) => r.session_id === session.id && r.step_key === stepKey
@@ -1380,6 +1382,7 @@
         state: {
           subMode: "poll",
           qIdx: cur.qIdx || 0,
+          order: cur.order,
           roundSeq: (cur.roundSeq || 0) + 1,
           customQ: { q },
           revealed: false,
@@ -1394,9 +1397,21 @@
       const s = (ctx.themeSessions || []).find((x) => x.id === sessionId);
       if (!s) return;
       const cur = s.state || { subMode: "poll", qIdx: -1, roundSeq: -1 };
+      const banks = ctx.questionBanks || window.DEFAULT_QUESTION_BANKS;
+      const total = (banks.pollQuestions || []).length;
+      const nextIdx = (cur.qIdx ?? -1) + 1;
+      // 每場開局隨機洗牌題目順序；整副題目都出完一輪後再重新洗牌，避免每次第一題都一樣
+      let order = Array.isArray(cur.order) && cur.order.length === total ? cur.order : null;
+      if (!order || (total > 0 && nextIdx % total === 0)) {
+        order = window.PartyEngine.shuffle([...Array(total).keys()]);
+        if (total > 1 && Array.isArray(cur.order) && cur.order.length === total && order[0] === cur.order[total - 1]) {
+          order.push(order.shift()); // 新一輪第一題不要跟上一輪最後一題重複
+        }
+      }
       const nextState = {
         subMode: "poll",
-        qIdx: (cur.qIdx ?? -1) + 1,
+        qIdx: nextIdx,
+        order,
         roundSeq: (cur.roundSeq ?? -1) + 1,
         customQ: null,
         revealed: false,

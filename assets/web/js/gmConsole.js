@@ -112,6 +112,25 @@
           </div>
 
           ${
+            g.seasonStatus !== "settled"
+              ? `<div class="sub-label" style="margin-bottom:6px;">🎛️ 臨時切換場景（突發狀況用，按「回到排程」立刻交還自動排程）：</div>
+                <div class="bet-btn-grid" style="margin-bottom:10px;">
+                  ${[
+                    { k: "auto", label: "⏰ 回到排程" },
+                    { k: "party", label: "🎲 Party Game" },
+                    { k: "dining", label: "🍽️ 吃飯" },
+                    { k: "theme", label: "🎪 主題遊戲" },
+                  ]
+                    .map(
+                      (m) => `<button class="btn ${(g.sceneOverride || "auto") === m.k ? "btn-gold" : "btn-secondary"} btn-sm"
+                        onclick="GMConsole.setSceneOverride('${m.k}')">${m.label}</button>`
+                    )
+                    .join("")}
+                </div>`
+              : ""
+          }
+
+          ${
             !isAuto && g.seasonStatus !== "settled"
               ? `<button class="btn btn-gold" style="width:100%;margin-bottom:10px;" onclick="GMConsole.setSceneOverride('auto')">
                   ⏰ 一鍵恢復【依自動排程切換】（交還系統自動控場）
@@ -157,16 +176,12 @@
 
           <details style="margin-top:14px;">
             <summary class="muted-xs" style="cursor:pointer;color:#94a3b8;font-weight:700;">
-              🛠️ 緊急意外備援：GM 手動強制切換場景（平時無須操作，全交由自動排程切換）
+              🛠️ 其他場景（開賽前／限時加成／跨年紅包，平時無須操作）
             </summary>
             <div class="bet-btn-grid" style="margin-top:8px;">
               ${[
-                { k: "auto", label: "⏰ 依自動排程切換" },
                 { k: "pre_event", label: "⏳ 開賽前(僅填資料)" },
-                { k: "dining", label: "🍽️ Dining 吃飯社交" },
-                { k: "party", label: "🎲 Party 自由賽桌" },
                 { k: "happy_hour", label: "🔥 限時加成 (+50%)" },
-                { k: "theme", label: "🎪 主題遊戲集合" },
                 { k: "red_packet", label: "🧧 跨年倒數紅包" },
               ]
                 .map(
@@ -927,7 +942,7 @@
             <button class="btn btn-gold btn-sm" style="width:100%;margin-top:8px;" onclick="GMConsole.addBankItem()">➕ 新增至題庫最上方</button>
           </div>
 
-          <div class="bank-list" style="margin-top:12px;max-height:360px;overflow-y:auto;">
+          <div class="bank-list" data-scroll-key="bank-${this.bankCategory}" style="margin-top:12px;max-height:360px;overflow-y:auto;">
             ${list
               .map(
                 (item, idx) => `<div class="history-row" style="align-items:flex-start;gap:8px;">
