@@ -18,6 +18,8 @@ workflows:
       vars:
         BUNDLE_ID: com.kerkerlai.nyepartyera
         APP_STORE_APPLE_ID: "6832899646"
+        # 新版 altool 無法自動由 Bundle ID 反查 App 時，直接指定 App 的數字 Apple ID
+        APP_STORE_CONNECT_ALTOOL_ADDITIONAL_ARGUMENTS: "--apple-id 6832899646"
     triggering:
       events: []
     scripts:
@@ -40,12 +42,21 @@ workflows:
       - name: Build IPA
         script: |
           set -e
-          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || echo "")
+          # pubspec 的 +N 為保底 build 號（目前 TestFlight 已有到 (4)，pubspec 設 +5）
+          PUBSPEC_BUILD=$(grep -E '^version:' pubspec.yaml | sed -E 's/.*\+([0-9]+).*/\1/')
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/tmp/latest_build_err.log || echo "")
           if [ -n "$LATEST" ] && [ "$LATEST" -eq "$LATEST" ] 2>/dev/null; then
             NEXT=$((LATEST + 1))
+            echo "✅ TestFlight 最新 build = $LATEST，本次使用 $NEXT"
           else
+            echo "⚠️ 無法查詢 TestFlight 最新 build 號（請檢查 API 金鑰權限／App Apple ID）："
+            cat /tmp/latest_build_err.log || true
             NEXT=$((BUILD_NUMBER + 1))
           fi
+          if [ -n "$PUBSPEC_BUILD" ] && [ "$NEXT" -lt "$PUBSPEC_BUILD" ]; then
+            NEXT=$PUBSPEC_BUILD
+          fi
+          echo "📦 Build number = $NEXT"
           flutter build ipa --release \
             --build-number=$NEXT \
             --export-options-plist=/Users/builder/export_options.plist
@@ -73,6 +84,8 @@ workflows:
       vars:
         BUNDLE_ID: com.kerkerlai.nyepartyera
         APP_STORE_APPLE_ID: "6832899646"
+        # 新版 altool 無法自動由 Bundle ID 反查 App 時，直接指定 App 的數字 Apple ID
+        APP_STORE_CONNECT_ALTOOL_ADDITIONAL_ARGUMENTS: "--apple-id 6832899646"
     triggering:
       events: []
     scripts:
@@ -95,12 +108,21 @@ workflows:
       - name: Build IPA (same marketing version, next build number)
         script: |
           set -e
-          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || echo "")
+          # pubspec 的 +N 為保底 build 號（目前 TestFlight 已有到 (4)，pubspec 設 +5）
+          PUBSPEC_BUILD=$(grep -E '^version:' pubspec.yaml | sed -E 's/.*\+([0-9]+).*/\1/')
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/tmp/latest_build_err.log || echo "")
           if [ -n "$LATEST" ] && [ "$LATEST" -eq "$LATEST" ] 2>/dev/null; then
             NEXT=$((LATEST + 1))
+            echo "✅ TestFlight 最新 build = $LATEST，本次使用 $NEXT"
           else
+            echo "⚠️ 無法查詢 TestFlight 最新 build 號（請檢查 API 金鑰權限／App Apple ID）："
+            cat /tmp/latest_build_err.log || true
             NEXT=$((BUILD_NUMBER + 1))
           fi
+          if [ -n "$PUBSPEC_BUILD" ] && [ "$NEXT" -lt "$PUBSPEC_BUILD" ]; then
+            NEXT=$PUBSPEC_BUILD
+          fi
+          echo "📦 Build number = $NEXT"
           flutter build ipa --release \
             --build-number=$NEXT \
             --export-options-plist=/Users/builder/export_options.plist
