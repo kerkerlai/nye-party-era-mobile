@@ -82,11 +82,13 @@
     },
 
     async init() {
-      document.body.addEventListener(
-        "pointerdown",
-        () => window.PartyFX.unlockAudio(),
-        { once: true }
-      );
+      // iOS WKWebView 需在 touchend / click 手勢內才能解鎖音效；每次手勢都檢查（處理推播打斷後的 interrupted 狀態）
+      const unlock = () => window.PartyFX.unlockAudio();
+      document.body.addEventListener("touchend", unlock, { passive: true });
+      document.body.addEventListener("click", unlock);
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") window.PartyFX.unlockAudio();
+      });
       const markDirty = (ev) => {
         const t = ev.target;
         if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) {
@@ -373,9 +375,20 @@
       }, 3500);
     },
 
-    switchTab(t) {
+    switchTab(t, anchorId = "") {
       this.tab = t;
       this.render();
+      if (anchorId) {
+        setTimeout(() => {
+          const target = document.getElementById(anchorId);
+          if (target) {
+            const det = target.querySelector("details");
+            if (det) det.open = true;
+            target.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        }, 60);
+        return;
+      }
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
 
@@ -431,6 +444,7 @@
     // --- 賽局結束 3 秒勝負開獎彈窗 (原地彈出顯示勝負與個人得分，不跳動捲軸！) ---
     closeResultSplash() {
       clearTimeout(this._resultSplashTimer);
+      this._splashKind = "";
       const el = document.getElementById("result-splash");
       if (el) el.classList.add("hidden");
     },
@@ -568,6 +582,17 @@
       `;
 
       el.classList.remove("hidden");
+      this._splashKind = "final";
+      card.classList.remove("fx-win", "fx-lose", "fx-neutral");
+      const iWonTable = realWinIds.includes(myId) && !isCoopFail;
+      const myBetWon = myBet && myBet.status === "won";
+      if (netDelta > 0 || iWonTable || myBetWon) {
+        window.PartyFX.playTone("win");
+        window.PartyFX.launchFireworksShow({ redPackets: false, durationMs: 2600 });
+      } else if ((myPart && !isPvpTie) || (myBet && myBet.status === "lost")) {
+        window.PartyFX.playTone("thunder");
+        window.PartyFX.launchLightningShow({ durationMs: 1600 });
+      }
       window.PartyFX.haptic(netDelta > 0 ? "heavy" : "medium");
       clearTimeout(this._resultSplashTimer);
       this._resultSplashTimer = setTimeout(() => {
@@ -616,6 +641,17 @@
         const cfgMap = {};
         (cfgRows || []).forEach((r) => (cfgMap[r.key] = r.value));
 
+        // 一次性遷移：v1.0.3 起「單機綁定鎖」預設開啟（舊資料庫已存 false，需升級一次；之後 GM 仍可自由切換）
+        if (cfgMap.global && !cfgMap.global.deviceLockDefaultV2 && !this._migratingLock) {
+          this._migratingLock = true;
+          cfgMap.global = { ...cfgMap.global, enforceDeviceLock: true, deviceLockDefaultV2: true };
+          window.PartyDB.upsert("config", [{ key: "global", value: { ...CFG.DEFAULTS, ...cfgMap.global } }])
+            .catch(() => {})
+            .finally(() => {
+              this._migratingLock = false;
+            });
+        }
+
         this.data = {
           globalCfg: { ...CFG.DEFAULTS, ...(cfgMap.global || {}) },
           schedule:
@@ -653,6 +689,7 @@
             if (t.status === "finished") this.shownResultSplashIds.add(t.id);
           });
           (this.data.claims || []).forEach((c) => this.seenClaimIds.add(c.id));
+          this.detectRoundResultFx(initMyId);
           this.lastKnownCeremonyStage = Number(this.data.globalCfg?.ceremonyStage) || 1;
           const effInit = window.PartyEngine.getEffectiveNowMs(
             this.data.globalCfg,
@@ -671,6 +708,15 @@
 
         // 檢查單機裝置綁定鎖：若已開啟單機鎖且此帳號已被綁定至另一台裝置，自動退出防止雙機重登
         const myIdCheck = getSavedPlayerId();
+        if (myIdCheck && (this.data.players || []).length > 0) {
+          const meRowDel = (this.data.players || []).find((p) => p.id === myIdCheck);
+          this._missingMeCount = meRowDel ? 0 : (this._missingMeCount || 0) + 1;
+          if (this._missingMeCount >= 2) {
+            this._missingMeCount = 0;
+            this.logoutSwitchAccount();
+            this.toast("🗑️ 此帳號已被 GM 刪除，請重新建立你的英雄暱稱！");
+          }
+        }
         if (myIdCheck && this.data.globalCfg.enforceDeviceLock) {
           const meRow = (this.data.players || []).find((p) => p.id === myIdCheck);
           const myDev = window.PartyDB.getDeviceId();
@@ -874,20 +920,33 @@
           if (isTyping) return;
         }
         if (isTyping) {
+          // 正在打字：先暫緩重繪。離開輸入框時延遲檢查，若手指是「換到下一格輸入框」就完全不重繪，
+          // 避免整頁 DOM 被重建吃掉第一次點擊（新年願望欄位要點兩次的根因）！
           if (!activeEl._deferHooked) {
             activeEl._deferHooked = true;
             activeEl.addEventListener(
               "blur",
               () => {
                 activeEl._deferHooked = false;
-                if (getSavedPlayerId()) {
-                  this.render();
-                }
+                setTimeout(() => {
+                  const nowActive = document.activeElement;
+                  const stillTyping =
+                    nowActive &&
+                    (nowActive.tagName === "INPUT" ||
+                      nowActive.tagName === "TEXTAREA" ||
+                      nowActive.tagName === "SELECT");
+                  if (stillTyping) {
+                    this._renderPendingAfterTyping = true;
+                    return;
+                  }
+                  if (getSavedPlayerId()) this.render();
+                }, 260);
               },
               { once: true }
             );
           }
         } else {
+          this._renderPendingAfterTyping = false;
           this.render();
         }
       } catch (err) {
@@ -910,6 +969,186 @@
           waiters.forEach((fn) => fn());
         }
       }
+    },
+
+    // ==================== 🎆／⚡ 每回合、每題、每關勝負即時彈窗（不必等整場結束！） ====================
+    showRoundFx({ kind = "win", icon = "🎆", title = "", detail = "", ms = 1700 } = {}) {
+      const el = document.getElementById("result-splash");
+      const card = document.getElementById("result-splash-card");
+      if (!el || !card) return;
+      if (!el.classList.contains("hidden") && this._splashKind === "final") return;
+      this._splashKind = "round";
+      const border = kind === "win" ? "#fbbf24" : kind === "lose" ? "#38bdf8" : "#94a3b8";
+      card.style.borderColor = border;
+      card.classList.remove("fx-win", "fx-lose", "fx-neutral");
+      card.classList.add(kind === "win" ? "fx-win" : kind === "lose" ? "fx-lose" : "fx-neutral");
+      card.innerHTML = `
+        <div class="round-fx-icon">${icon}</div>
+        <h3 class="round-fx-title">${esc(title)}</h3>
+        ${detail ? `<div class="round-fx-detail">${esc(detail)}</div>` : ""}
+        <div class="muted-xs" style="margin-top:8px;">點一下關閉</div>
+        <div class="result-splash-bar" style="animation-duration:${ms}ms;"></div>
+      `;
+      el.classList.remove("hidden");
+      if (kind === "win") {
+        window.PartyFX.playTone("win");
+        window.PartyFX.haptic("heavy");
+        window.PartyFX.launchFireworksShow({ redPackets: false, durationMs: Math.max(1500, ms) });
+      } else if (kind === "lose") {
+        window.PartyFX.playTone("thunder");
+        window.PartyFX.haptic("heavy");
+        window.PartyFX.launchLightningShow({ durationMs: Math.max(1300, ms - 200) });
+      } else {
+        window.PartyFX.playTone("bell");
+        window.PartyFX.haptic("medium");
+      }
+      clearTimeout(this._resultSplashTimer);
+      this._resultSplashTimer = setTimeout(() => this.closeResultSplash(), ms);
+    },
+
+    detectRoundResultFx(myId) {
+      if (!myId) return;
+      this._roundFxSeen = this._roundFxSeen || new Set();
+      const ledgerIds = new Set((this.data.ledger || []).map((l) => l.id));
+      const ledgerById = {};
+      (this.data.ledger || []).forEach((l) => (ledgerById[l.id] = l));
+      const events = [];
+
+      // A. 自由賽桌小遊戲每回合結果
+      for (const t of this.data.tables || []) {
+        if (t.status !== "playing") continue;
+        const meP = (t.participants || []).find((p) => p.id === myId);
+        if (!meP || meP.forfeited) continue;
+        const gs = t.game_state || {};
+        if (t.game_type === "rps_king" && gs.lastRound && gs.lastRound.seq) {
+          const w = gs.lastRound.winnerId;
+          events.push({
+            key: `${t.id}_rps_${gs.lastRound.seq}`,
+            kind: !w ? "neutral" : w === myId ? "win" : "lose",
+            icon: !w ? "🤝" : w === myId ? "🎆" : "⚡",
+            title: !w ? "平手！再出一拳" : w === myId ? "這拳你贏了！" : "這拳輸了…",
+            detail: gs.lastRound.msg || "",
+            ms: 1500,
+          });
+        } else if (t.game_type === "soul_sync_2v2" && gs.lastQResult) {
+          const hit = meP.team === "team_B" ? gs.lastQResult.hitB : gs.lastQResult.hitA;
+          events.push({
+            key: `${t.id}_ss_${gs.lastQResult.qIdx}`,
+            kind: hit ? "win" : "lose",
+            icon: hit ? "💞" : "⚡",
+            title: hit ? `第 ${gs.lastQResult.qIdx + 1} 題默契命中！` : `第 ${gs.lastQResult.qIdx + 1} 題沒對上…`,
+            detail: `🅰️ ${(gs.scores || {}).team_A || 0} 題${(t.participants || []).length > 2 ? ` vs 🅱️ ${(gs.scores || {}).team_B || 0} 題` : ""}`,
+            ms: 1500,
+          });
+        } else if (t.game_type === "number_bomb" && gs.lastBoom && gs.lastBoom.seq) {
+          const isMe = gs.lastBoom.id === myId;
+          events.push({
+            key: `${t.id}_bomb_${gs.lastBoom.seq}`,
+            kind: isMe ? "lose" : "win",
+            icon: isMe ? "💥" : "🎆",
+            title: isMe ? "踩中炸彈淘汰！" : "有人踩雷，你安全存活！",
+            detail: gs.lastLog || "",
+            ms: 1700,
+          });
+        } else if (t.game_type === "five_seconds" && gs.lastJudge && gs.lastJudge.playerId === myId) {
+          events.push({
+            key: `${t.id}_fs_${gs.lastJudge.turn}`,
+            kind: gs.lastJudge.passed ? "win" : "lose",
+            icon: gs.lastJudge.passed ? "🎆" : "⚡",
+            title: gs.lastJudge.passed ? "成功講滿 3 個！+1 分" : "卡詞超時，這輪 0 分",
+            detail: "",
+            ms: 1500,
+          });
+        }
+      }
+
+      // B. 主題遊戲每題／每關開獎
+      for (const s of this.data.themeSessions || []) {
+        if (!(s.participants || []).includes(myId)) continue;
+        const st = s.state || {};
+        if (s.theme_type === "share_2026_2027" && st.revealed && st.items) {
+          const stepKey = `${st.year}_${st.idx || 0}`;
+          const owner = (st.items[st.idx || 0] || {}).ownerId;
+          const gain =
+            owner === myId
+              ? 15
+              : Number(ledgerById[`share_guess_${s.id}_${stepKey}_${myId}`]?.delta || 0);
+          events.push({
+            key: `${s.id}_share_${stepKey}`,
+            kind: gain > 0 ? "win" : "lose",
+            icon: gain > 0 ? "🎆" : "⚡",
+            title: owner === myId ? "你的故事揭曉！分享獎 +15 PT" : gain > 0 ? `猜中了！+${gain} PT` : "這題沒猜中…",
+            detail: "",
+            ms: 2600,
+          });
+        } else if (s.theme_type === "poll_minority" && st.revealed) {
+          const stepKey = `poll_${st.roundSeq || 0}`;
+          const hit = ledgerIds.has(`poll_hit_${s.id}_${stepKey}_${myId}`);
+          events.push({
+            key: `${s.id}_${stepKey}`,
+            kind: hit ? "win" : "lose",
+            icon: hit ? "🎆" : "⚡",
+            title: hit ? "命中全場最高票！+15 PT" : "沒投中最高票…",
+            detail: "",
+            ms: 2600,
+          });
+        } else if (s.theme_type === "wavelength" && st.revealed) {
+          const stepKey = `wl_${st.roundSeq || 1}`;
+          const gain =
+            Number(ledgerById[`wl_guess_${s.id}_${stepKey}_${myId}`]?.delta || 0) +
+            Number(ledgerById[`wl_host_${s.id}_${stepKey}_${myId}`]?.delta || 0);
+          events.push({
+            key: `${s.id}_${stepKey}`,
+            kind: gain > 0 ? "win" : "lose",
+            icon: gain > 0 ? "🎯" : "⚡",
+            title: gain > 0 ? `頻率對上了！+${gain} PT` : "差太遠了，這輪 0 分",
+            detail: `靶心正解：${st.target}`,
+            ms: 2600,
+          });
+        } else if (s.theme_type === "undercover" && st.gameOver && st.gameSeq) {
+          const gain = Number(ledgerById[`uc_end_${s.id}_${st.gameSeq}_${myId}`]?.delta || 0);
+          events.push({
+            key: `${s.id}_uc_${st.gameSeq}`,
+            kind: gain > 0 ? "win" : "lose",
+            icon: gain > 0 ? "🎆" : "⚡",
+            title: gain > 0 ? `你的陣營獲勝！+${gain} PT` : "你的陣營落敗…",
+            detail: st.lastResultMsg || "",
+            ms: 2800,
+          });
+        } else if (s.theme_type === "physical_6stages" && st.redTeam) {
+          const myColor = (st.redTeam || []).includes(myId) ? "red" : (st.blueTeam || []).includes(myId) ? "blue" : "";
+          Object.entries(st.stageWinners || {}).forEach(([no, col]) => {
+            events.push({
+              key: `${s.id}_phys_${no}`,
+              kind: col === myColor ? "win" : "lose",
+              icon: col === myColor ? "🏆" : "⚡",
+              title: col === myColor ? `第 ${no} 關獲勝！全隊 +30 PT` : `第 ${no} 關落敗…`,
+              detail: col === "red" ? "🔴 紅隊拿下本關" : "🔵 藍隊拿下本關",
+              ms: 2600,
+            });
+          });
+        } else if (s.theme_type === "find_figurine" && st.half === 3) {
+          const winTeam = st.winnerBanner && st.winnerBanner.includes("A 隊") ? st.teamA : st.teamB;
+          const won = (winTeam || []).includes(myId);
+          events.push({
+            key: `${s.id}_fig_end`,
+            kind: won ? "win" : "lose",
+            icon: won ? "🔍" : "⚡",
+            title: won ? "你的隊伍獲勝！+100 PT" : "完賽！參與獎 +40 PT",
+            detail: st.winnerBanner || "",
+            ms: 2800,
+          });
+        }
+      }
+
+      if (!this._roundFxPrimed) {
+        events.forEach((e) => this._roundFxSeen.add(e.key));
+        this._roundFxPrimed = true;
+        return;
+      }
+      const fresh = events.filter((e) => !this._roundFxSeen.has(e.key));
+      fresh.forEach((e) => this._roundFxSeen.add(e.key));
+      if (fresh.length > 0) this.showRoundFx(fresh[fresh.length - 1]);
     },
 
     detectRealtimeNotifications() {
@@ -972,6 +1211,7 @@
       }
 
       // 1b. 終局頒獎典禮揭曉第 4 幕（總冠軍登基）全場同步放煙火！
+      this.detectRoundResultFx(myId);
       const curCeremonyStage = Number(this.data.globalCfg?.ceremonyStage) || 1;
       if (curCeremonyStage !== this.lastKnownCeremonyStage) {
         const prevStage = this.lastKnownCeremonyStage;
@@ -1137,6 +1377,7 @@
           window.PartyGamesUI.syncRoomOverlay(ctx);
         }
         root.innerHTML = this.renderOnboarding(ctx);
+        this._lastMainHtml = "";
 
         const nextNameEl = document.getElementById("login-name");
         const nextPinEl = document.getElementById("login-pin");
@@ -1168,7 +1409,7 @@
         ? ""
         : `<span class="top-my-pt" title="點擊查看個人積分存摺" onclick="PartyApp.switchTab('dashboard')">💰 ${esc(window.PartyEngine.fmtPt(myScore))} PT</span>`;
 
-      root.innerHTML = `
+      const nextMainHtml = `
         <header class="top-bar">
           <div class="brand-row">
             <span class="brand-logo" onclick="PartyApp.handleLogoTap()" title="主辦人連點 3 下可解鎖控場後台">🥂 ${esc(evTitle)}</span>
@@ -1211,6 +1452,25 @@
         </nav>
       `;
 
+      // ⚡ Dirty-Check：畫面內容完全沒變時跳過整頁 innerHTML 重建（減少頭貼重解碼、避免點擊被吃掉）
+      if (this._lastMainHtml === nextMainHtml && this._lastRenderedTab === this.tab && root.firstElementChild) {
+        if (window.PartyGamesUI && window.PartyGamesUI.syncRoomOverlay) {
+          window.PartyGamesUI.syncRoomOverlay(ctx);
+        }
+        return;
+      }
+      const activeIdBefore = document.activeElement?.id || "";
+      let selStart = null;
+      let selEnd = null;
+      try {
+        if (activeIdBefore && document.activeElement.setSelectionRange) {
+          selStart = document.activeElement.selectionStart;
+          selEnd = document.activeElement.selectionEnd;
+        }
+      } catch (_) {}
+      this._lastMainHtml = nextMainHtml;
+      root.innerHTML = nextMainHtml;
+
       // 還原使用者剛展開的手風琴、內部清單捲軸、主畫面捲軸、勾選框與未送出草稿欄位（結算或背景同步絕不亂跳捲軸或吃掉勾勾！）
       if (this._lastRenderedTab === this.tab) {
         const newDetails = root.querySelectorAll("details");
@@ -1240,6 +1500,15 @@
         });
         if (window.scrollY !== prevWinY) {
           window.scrollTo(0, prevWinY);
+        }
+        if (activeIdBefore) {
+          const refocus = document.getElementById(activeIdBefore);
+          if (refocus && refocus !== document.activeElement && typeof refocus.focus === "function") {
+            try {
+              refocus.focus({ preventScroll: true });
+              if (selStart !== null && refocus.setSelectionRange) refocus.setSelectionRange(selStart, selEnd);
+            } catch (_) {}
+          }
         }
       }
       this._lastRenderedTab = this.tab;
@@ -1370,8 +1639,22 @@
       this.render();
     },
 
+    normalizePlayerName(raw) {
+      return String(raw || "")
+        .normalize("NFKC")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+    },
+
     async submitLogin() {
-      const name = (document.getElementById("login-name")?.value ?? this.loginDraftName ?? "").trim();
+      if (this._loginBusy) return;
+      const name = String(document.getElementById("login-name")?.value ?? this.loginDraftName ?? "")
+        .normalize("NFKC")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
       const rawPin = (document.getElementById("login-pin")?.value ?? this.loginDraftPin ?? "").trim();
       this.loginDraftName = name;
       this.loginDraftPin = rawPin;
@@ -1379,127 +1662,166 @@
         this.toast("請輸入你的暱稱 ID！");
         return;
       }
-      const g = { ...CFG.DEFAULTS, ...(this.data.globalCfg || {}) };
-      const partyPin = String(g.partyJoinPin || "1234").trim();
-      const pin = rawPin || partyPin;
-      const myDeviceId = window.PartyDB.getDeviceId();
+      this._loginBusy = true;
+      try {
+        const g = { ...CFG.DEFAULTS, ...(this.data.globalCfg || {}) };
+        const partyPin = String(g.partyJoinPin || "1234").trim();
+        const pin = rawPin || partyPin;
+        const myDeviceId = window.PartyDB.getDeviceId();
+        const normName = this.normalizePlayerName(name);
 
-      const existing = (this.data.players || []).find(
-        (p) => p.name.toLowerCase() === name.toLowerCase()
-      );
-      if (existing) {
-        // 驗證統一派對 PIN 碼或該角色原 PIN 碼
-        if (rawPin && pin !== partyPin && existing.pin && existing.pin !== pin) {
-          this.toast("❌ PIN 碼不正確，請輸入主辦人提供的派對 PIN 碼！");
-          return;
-        }
-        if (!rawPin && existing.pin && existing.pin !== partyPin) {
-          this.toast("請輸入 4 碼 PIN 認證登入！");
-          return;
-        }
-        // 🔒 檢查單機裝置綁定鎖（正式派對開啟時，禁止第 2 台手機重複登入同一角色！）
-        if (
-          g.enforceDeviceLock &&
-          existing.bound_device_id &&
-          existing.bound_device_id !== myDeviceId
-        ) {
-          this.toast(
-            `🔒 角色「${existing.name}」已綁定在另一支手機上，無法兩支手機共用同一角色！（若本人換手機請找 GM 後台解綁）`
-          );
+        // 🔒 一律先從雲端即時抓最新名單比對（避免剛開 App 快取未同步就建出第 2 個同名帳號！）
+        let latestPlayers = this.data.players || [];
+        try {
+          const fresh = await window.PartyDB.select("players", "order=joined_at.asc", { forceNetwork: true });
+          if (Array.isArray(fresh)) latestPlayers = fresh;
+        } catch (_) {}
+        const sameNameRows = latestPlayers
+          .filter((p) => this.normalizePlayerName(p.name) === normName)
+          .sort((a, b) => String(a.joined_at || "").localeCompare(String(b.joined_at || "")));
+        const existing = sameNameRows[0] || null;
+
+        if (existing) {
+          // 驗證統一派對 PIN 碼或該角色原 PIN 碼
+          if (rawPin && pin !== partyPin && existing.pin && existing.pin !== pin) {
+            this.toast("❌ PIN 碼不正確，請輸入主辦人提供的派對 PIN 碼！");
+            return;
+          }
+          if (!rawPin && existing.pin && existing.pin !== partyPin) {
+            this.toast("請輸入 4 碼 PIN 認證登入！");
+            return;
+          }
+          // 🔒 單機綁定鎖：已綁定其他手機的暱稱，第 2 支手機無法登入
+          if (
+            g.enforceDeviceLock &&
+            existing.bound_device_id &&
+            existing.bound_device_id !== myDeviceId
+          ) {
+            this.toast(
+              `🔒 暱稱「${existing.name}」已被另一支手機註冊綁定！請換一個暱稱；若是本人換手機請找 GM 解綁。`
+            );
+            return;
+          }
+
+          const patch = {};
+          const isOwnerDevice = !existing.bound_device_id || existing.bound_device_id === myDeviceId;
+          // 只有原綁定手機（本人）才可在登入時順便更換頭貼，避免同名覆蓋別人照片
+          if (this.pendingLoginAvatarUrl && isOwnerDevice) {
+            patch.avatar = this.pendingLoginAvatarUrl;
+          } else if (!existing.avatar && this.selectedLoginEmoji) {
+            patch.avatar = this.selectedLoginEmoji;
+          }
+          if (!existing.bound_device_id || (!g.enforceDeviceLock && existing.bound_device_id !== myDeviceId)) {
+            patch.bound_device_id = myDeviceId;
+          }
+          if (Object.keys(patch).length > 0) {
+            await window.PartyDB.update("players", `id=eq.${encodeURIComponent(existing.id)}`, patch);
+          }
+          this.pendingLoginAvatarUrl = "";
+          this.loginDraftName = "";
+          this.loginDraftPin = "";
+          setSavedPlayerId(existing.id);
+          await this.refreshAll(true);
           return;
         }
 
-        const patch = {};
-        if (this.pendingLoginAvatarUrl) {
-          patch.avatar = this.pendingLoginAvatarUrl;
-        } else if (!existing.avatar && this.selectedLoginEmoji) {
-          patch.avatar = this.selectedLoginEmoji;
+        if (rawPin && rawPin !== partyPin) {
+          this.toast("❌ 派對通行 PIN 碼不正確，請輸入主辦人給的 PIN 碼！");
+          return;
         }
-        if (!existing.bound_device_id || (!g.enforceDeviceLock && existing.bound_device_id !== myDeviceId)) {
-          patch.bound_device_id = myDeviceId;
+
+        // 以正規化暱稱產生確定性 ID，並用交易鎖建立：兩支手機同時註冊同名也只會產生 1 個帳號
+        let slug = "";
+        try {
+          slug = Array.from(normName)
+            .map((ch) => ch.codePointAt(0).toString(36))
+            .join("-")
+            .slice(0, 80);
+        } catch (_) {
+          slug = String(Date.now());
         }
-        if (Object.keys(patch).length > 0) {
-          await window.PartyDB.update("players", `id=eq.${encodeURIComponent(existing.id)}`, patch);
+        const newId = `p_${slug}`;
+        const chosenAvatar = this.pendingLoginAvatarUrl || this.selectedLoginEmoji || "🦊";
+        const isFirstGm = latestPlayers.length === 0 && /kerker/i.test(name);
+        let createdNew = false;
+        let takenByOtherDevice = false;
+        await window.PartyDB.transactRow("players", newId, (cur) => {
+          if (cur) {
+            if (g.enforceDeviceLock && cur.bound_device_id && cur.bound_device_id !== myDeviceId) {
+              takenByOtherDevice = true;
+            }
+            return undefined;
+          }
+          createdNew = true;
+          return {
+            id: newId,
+            name,
+            pin: partyPin,
+            avatar: chosenAvatar,
+            room: "",
+            is_gm: isFirstGm,
+            push_tested: false,
+            bound_device_id: myDeviceId,
+            tested_games: [],
+          };
+        });
+        if (takenByOtherDevice) {
+          this.toast(`🔒 暱稱「${name}」剛剛已被另一支手機註冊！請換一個暱稱。`);
+          return;
         }
         this.pendingLoginAvatarUrl = "";
         this.loginDraftName = "";
         this.loginDraftPin = "";
-        setSavedPlayerId(existing.id);
+
+        // 若活動已經正式開始（中途晚到的朋友），自動補發初始 300 PT 與今日隱藏任務！
+        const effNow = window.PartyEngine.getEffectiveNowMs(
+          this.data.globalCfg,
+          window.PartyDB.serverNowMs
+        );
+        const curSc = window.PartyEngine.resolveScene(
+          this.data.globalCfg,
+          this.data.schedule,
+          effNow
+        );
+        if (createdNew && curSc.scene !== "pre_event" && curSc.scene !== "viewer") {
+          const dayKey = this.data.globalCfg.activeDayKey || "2026-12-31";
+          await window.PartyDB.upsert(
+            "ledger",
+            [
+              {
+                id: `init_300_${newId}`,
+                player_id: newId,
+                delta: Number(this.data.globalCfg.initialPoints) || 300,
+                category: "initial",
+                reason: "🎉 跨年英雄紀元開賽初始基金",
+                day_key: dayKey,
+              },
+            ],
+            { ignoreDuplicates: true }
+          );
+          const cards = window.PartyEngine.drawMissionCards(this.data.questionBanks, [], 3);
+          await window.PartyDB.upsert(
+            "missions",
+            [
+              {
+                id: `${newId}_${dayKey}`,
+                player_id: newId,
+                day_key: dayKey,
+                cards,
+                rerolls_used: 0,
+                locked: false,
+              },
+            ],
+            { ignoreDuplicates: true }
+          );
+        }
+
+        setSavedPlayerId(newId);
+        window.PartyFX.playTone("win");
         await this.refreshAll(true);
-        return;
+      } finally {
+        this._loginBusy = false;
       }
-
-      if (rawPin && rawPin !== partyPin) {
-        this.toast("❌ 派對通行 PIN 碼不正確，請輸入主辦人給的 PIN 碼！");
-        return;
-      }
-
-      const newId = `p_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      const chosenAvatar = this.pendingLoginAvatarUrl || this.selectedLoginEmoji || "🦊";
-      const isFirstGm = (this.data.players || []).length === 0 && /kerker/i.test(name);
-
-      await window.PartyDB.upsert("players", [
-        {
-          id: newId,
-          name,
-          pin: partyPin,
-          avatar: chosenAvatar,
-          room: "",
-          is_gm: isFirstGm,
-          push_tested: false,
-          bound_device_id: myDeviceId,
-        },
-      ]);
-      this.pendingLoginAvatarUrl = "";
-      this.loginDraftName = "";
-      this.loginDraftPin = "";
-
-      // 若活動已經正式開始（中途晚到的朋友），自動補發初始 300 PT 與今日隱藏任務！
-      const effNow = window.PartyEngine.getEffectiveNowMs(
-        this.data.globalCfg,
-        window.PartyDB.serverNowMs
-      );
-      const curSc = window.PartyEngine.resolveScene(
-        this.data.globalCfg,
-        this.data.schedule,
-        effNow
-      );
-      if (curSc.scene !== "pre_event" && curSc.scene !== "viewer") {
-        const dayKey = this.data.globalCfg.activeDayKey || "2026-12-31";
-        await window.PartyDB.upsert(
-          "ledger",
-          [
-            {
-              id: `init_300_${newId}`,
-              player_id: newId,
-              delta: Number(this.data.globalCfg.initialPoints) || 300,
-              category: "initial",
-              reason: "🎉 跨年英雄紀元開賽初始基金",
-              day_key: dayKey,
-            },
-          ],
-          { ignoreDuplicates: true }
-        );
-        const cards = window.PartyEngine.drawMissionCards(this.data.questionBanks, [], 3);
-        await window.PartyDB.upsert(
-          "missions",
-          [
-            {
-              id: `${newId}_${dayKey}`,
-              player_id: newId,
-              day_key: dayKey,
-              cards,
-              rerolls_used: 0,
-              locked: false,
-            },
-          ],
-          { ignoreDuplicates: true }
-        );
-      }
-
-      setSavedPlayerId(newId);
-      window.PartyFX.playTone("win");
-      await this.refreshAll(true);
     },
 
     logoutSwitchAccount() {
@@ -1695,8 +2017,8 @@
         </div>
 
         <!-- 2. 行前必填：雙輪個人資料分享卡 -->
-        <div class="section-card">
-          <details ${!ok26 || !ok27 || isPreEvent ? "open" : ""}>
+        <div class="section-card" id="share-cards-section">
+          <details class="share-form-details" ${!ok26 || !ok27 || isPreEvent ? "open" : ""}>
             <summary style="font-weight:800;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
               <span>✍️ 個人資料填寫（${esc(lbA)} ＆ ${esc(lbB)}）</span>
               <span class="q-tag ${ok26 && ok27 ? "q-ok" : "q-lock"}">${ok26 && ok27 ? "✅ 已完成" : "⏳ 請填寫"}</span>
@@ -1920,7 +2242,7 @@
             <button class="btn ${me.push_tested ? "btn-secondary" : "btn-gold"}" onclick="PartyApp.testPushAndSound()">
               🔔 ${me.push_tested ? "再次測試通知＆音效" : "點此測試通知＆音效"}
             </button>
-            <button class="btn ${ok26 && ok27 ? "btn-secondary" : "btn-gold"}" onclick="PartyApp.switchTab('dashboard')">
+            <button class="btn ${ok26 && ok27 ? "btn-secondary" : "btn-gold"}" onclick="PartyApp.switchTab('dashboard','share-cards-section')">
               ✍️ ${ok26 && ok27 ? "查看／修改個人資料" : "前往填寫個人資料"}
             </button>
           </div>
@@ -2537,6 +2859,8 @@
       window.PartyFX.unlockAudio();
       window.PartyFX.playTone("win");
       window.PartyFX.haptic("heavy");
+      // 先讓測試鈴聲完整播完，再彈出系統推播橫幅（避免 iOS 通知搶走音訊焦點）
+      await new Promise((r) => setTimeout(r, 650));
       try {
         await window.PartyFX.notify(
           "🎉 跨年英雄紀元推播測試成功！",

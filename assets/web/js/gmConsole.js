@@ -197,7 +197,7 @@
         <div class="section-card" style="margin-top:14px;">
           <div class="section-title">📱 角色單機綁定防雙登設定</div>
           <p class="muted-xs" style="margin-bottom:8px;">
-            開啟後，每個角色登入即綁定該支手機（滑掉重開或同機誤登出皆可輸入同暱稱+PIN無縫連回，但<b>禁止第 2 台手機重複登入同一角色</b>）。目前 Web 測試階段預設關閉方便你單機切多帳號測試！
+            開啟後（<b>預設已開啟</b>），每個暱稱一註冊就綁定該支手機：本人同手機重開可無縫連回，但<b>其他手機輸入同名會被擋下</b>。本人換手機請到「🛏️ 分房&綠燈」按解除綁定；需要單機切多帳號測試時可暫時關閉。
           </p>
           <button class="btn ${g.enforceDeviceLock ? "btn-gold" : "btn-secondary"} btn-sm" style="width:100%;" onclick="GMConsole.toggleDeviceLock()">
             ${g.enforceDeviceLock ? "🔒 目前：正式單機綁定鎖【已開啟】（禁止2台手機登同ID）" : "🧪 目前：Web 測試彈性模式【未鎖定】（允許自由切換帳號測試）"}
@@ -767,14 +767,21 @@
                       }
                     </div>
                   </div>
-                  <select class="input-dark" style="width:145px;padding:6px;" onchange="GMConsole.assignRoom('${p.id}', this.value)">
-                    <option value="">-- 指派房號 --</option>
-                    ${rooms
-                      .map(
-                        (r) => `<option value="${esc(r.name)}" ${p.room === r.name ? "selected" : ""}>${esc(r.name)}</option>`
-                      )
-                      .join("")}
-                  </select>
+                  <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
+                    <select class="input-dark" style="width:145px;padding:6px;" onchange="GMConsole.assignRoom('${p.id}', this.value)">
+                      <option value="">-- 指派房號 --</option>
+                      ${rooms
+                        .map(
+                          (r) => `<option value="${esc(r.name)}" ${p.room === r.name ? "selected" : ""}>${esc(r.name)}</option>`
+                        )
+                        .join("")}
+                    </select>
+                    ${
+                      p.id === ctx.me?.id
+                        ? `<span class="muted-xs">（你自己）</span>`
+                        : `<button class="btn btn-danger btn-xs" onclick="GMConsole.confirmDeletePlayer('${esc(p.id)}')">🗑️ 刪除帳號</button>`
+                    }
+                  </div>
                 </div>
               `;
             })
@@ -1258,6 +1265,131 @@
       });
       window.PartyApp.toast("🔓 已解除該角色的裝置綁定！玩家可於新手機重新登入綁定");
       await window.PartyApp.refreshAll();
+    },
+
+    confirmDeletePlayer(playerId) {
+      const ctx = window.PartyApp.getContext();
+      const p = (ctx.players || []).find((x) => x.id === playerId);
+      if (!p) return;
+      const inPlaying = (ctx.tables || []).some(
+        (t) =>
+          (t.status === "playing" || t.status === "settling") &&
+          (t.participants || []).some((x) => x.id === playerId && !x.forfeited)
+      );
+      window.PartyApp.confirmModal(
+        "🗑️ 刪除玩家帳號",
+        `確定要永久刪除【${p.name}】嗎？\n將一併清除他的積分帳本、任務、徽章、認證申請與尚未開賽的賽桌／下注；被抽到他當秘密大腿的人會自動補抽新人選。${
+          inPlaying ? "\n⚠️ 他目前正在對戰中，系統會先替他棄權。" : ""
+        }\n此動作無法復原！`,
+        "🗑️ 確定刪除",
+        () => this.deletePlayerAccount(playerId),
+        true
+      );
+    },
+
+    async deletePlayerAccount(playerId) {
+      return window.PartyDB.withLock(`del_player_${playerId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        const victim = (ctx.players || []).find((x) => x.id === playerId);
+        if (!victim || playerId === ctx.me?.id) return;
+        const enc = encodeURIComponent(playerId);
+
+        // 1. 進行中賽桌：標記棄權並視情況結算；集結中賽桌：移出座位（房主則取消賽桌）
+        for (const t of ctx.tables || []) {
+          const inTbl = (t.participants || []).some((x) => x.id === playerId);
+          if (t.status === "open") {
+            if (t.host_id === playerId) {
+              const tBets = (ctx.bets || []).filter((b) => b.table_id === t.id);
+              for (const b of tBets) {
+                await window.PartyDB.remove("ledger", `id=eq.${encodeURIComponent(`stake_${b.id}`)}`);
+                await window.PartyDB.remove("bets", `id=eq.${encodeURIComponent(b.id)}`);
+              }
+              await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(t.id)}`, { status: "cancelled" });
+            } else if (inTbl) {
+              await window.PartyDB.transactRow("tables", t.id, (cur) => {
+                if (!cur || cur.status !== "open") return undefined;
+                cur.participants = (cur.participants || []).filter((x) => x.id !== playerId);
+                return cur;
+              });
+            }
+          } else if ((t.status === "playing" || t.status === "settling") && inTbl) {
+            const tx = await window.PartyDB.transactRow("tables", t.id, (cur) => {
+              if (!cur || (cur.status !== "playing" && cur.status !== "settling")) return undefined;
+              cur.participants = (cur.participants || []).map((x) =>
+                x.id === playerId ? { ...x, forfeited: true } : x
+              );
+              if (cur.game_type === "number_bomb" && cur.game_state) {
+                cur.game_state.aliveIds = (cur.game_state.aliveIds || []).filter((id) => id !== playerId);
+                cur.game_state.turnIdx = (cur.game_state.turnIdx || 0) % Math.max(1, cur.game_state.aliveIds.length);
+              }
+              return cur;
+            });
+            const snap = tx.snapshot;
+            const remaining = ((snap && snap.participants) || []).filter((x) => !x.forfeited);
+            if (snap && remaining.length <= 1) {
+              await window.PartyEngine.settlePartyTable(
+                snap,
+                remaining.length ? [remaining[0].id] : ["__pvp_tie__"],
+                ctx.bets,
+                ctx.globalCfg
+              );
+            }
+          }
+        }
+
+        // 2. 清除下注（僅限尚未結算）、帳本、任務、徽章、認證
+        const openBets = (ctx.bets || []).filter((b) => b.bettor_id === playerId && b.status === "locked");
+        for (const b of openBets) {
+          await window.PartyDB.remove("bets", `id=eq.${encodeURIComponent(b.id)}`);
+        }
+        await window.PartyDB.remove("ledger", `player_id=eq.${enc}`);
+        await window.PartyDB.remove("missions", `player_id=eq.${enc}`);
+        await window.PartyDB.remove("badges_awarded", `player_id=eq.${enc}`);
+        const myClaims = (ctx.claims || []).filter((c) => c.applicant_id === playerId);
+        for (const c of myClaims) {
+          await window.PartyDB.remove("claim_approvals", `claim_id=eq.${encodeURIComponent(c.id)}`);
+          await window.PartyDB.remove("claims", `id=eq.${encodeURIComponent(c.id)}`);
+        }
+        await window.PartyDB.remove("claim_approvals", `approver_id=eq.${enc}`);
+
+        // 3. 主題房移出參與名單
+        for (const s of ctx.themeSessions || []) {
+          if (s.status !== "finished" && (s.participants || []).includes(playerId)) {
+            await window.PartyDB.transactRow("theme_sessions", s.id, (cur) => {
+              if (!cur) return undefined;
+              cur.participants = (cur.participants || []).filter((id) => id !== playerId);
+              return cur;
+            });
+          }
+        }
+
+        // 4. 刪除玩家本體
+        await window.PartyDB.remove("players", `id=eq.${enc}`);
+
+        // 5. 被抽到他當大腿／二腿的玩家：只替受影響者補抽新人選（不打亂其他人的配對）
+        const survivors = (ctx.players || []).filter((x) => x.id !== playerId);
+        for (const p of survivors) {
+          const patch = {};
+          const pool = survivors.filter((c) => c.id !== p.id);
+          const pickOther = (avoid) => {
+            const opts = pool.filter((c) => !avoid.includes(c.id));
+            if (!opts.length) return null;
+            return opts[Math.floor(Math.random() * opts.length)].id;
+          };
+          if (p.thigh_id === playerId) patch.thigh_id = pickOther([p.second_thigh_id]);
+          if (p.second_thigh_id === playerId) {
+            patch.second_thigh_id = pickOther([patch.thigh_id ?? p.thigh_id]);
+          }
+          if (Object.keys(patch).length) {
+            await window.PartyDB.update("players", `id=eq.${encodeURIComponent(p.id)}`, patch);
+          }
+        }
+
+        this.manualTargetIds.delete(playerId);
+        window.PartyFX.playTone("bell");
+        window.PartyApp.toast(`🗑️ 已刪除帳號【${victim.name}】並清理相關紀錄！`);
+        await window.PartyApp.refreshAll();
+      });
     },
 
     async saveGlobalParams() {

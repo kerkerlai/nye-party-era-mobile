@@ -20,6 +20,7 @@ import 'local_asset_server.dart';
 abstract class PartyNativeAdapter {
   Future<void> setWakelock(bool enabled);
   Future<void> triggerHaptic(String style);
+  Future<void> playNativeWav(String wavBase64);
   Future<void> requestNotificationPermission();
   Future<void> showNotification(int id, String title, String body);
   Future<void> launchExternalUrl(Uri uri);
@@ -95,6 +96,10 @@ class RealPartyNativeAdapter implements PartyNativeAdapter {
     }
   }
 
+  static const MethodChannel _iosAudioChannel = MethodChannel(
+    'com.kerkerlai.nyepartyera/audio',
+  );
+
   @override
   Future<void> triggerHaptic(String style) async {
     if (style == 'heavy') {
@@ -102,6 +107,16 @@ class RealPartyNativeAdapter implements PartyNativeAdapter {
     } else {
       await HapticFeedback.mediumImpact();
     }
+  }
+
+  @override
+  Future<void> playNativeWav(String wavBase64) async {
+    if (kIsWeb || !Platform.isIOS || wavBase64.isEmpty) return;
+    try {
+      await _iosAudioChannel.invokeMethod<bool>('playWav', <String, Object>{
+        'wavBase64': wavBase64,
+      });
+    } catch (_) {}
   }
 
   Future<void> _doRequestNotificationPermission() async {
@@ -319,10 +334,12 @@ class _PartyShellScreenState extends State<PartyShellScreen> {
   Future<void> _injectRuntimeGlobals(PartyWebSession sess) async {
     final safeDevId = jsonEncode(_nativeDeviceId);
     final safeFbUrl = jsonEncode(_activeFirebaseUrl);
+    final iosNativeAudio = (!kIsWeb && Platform.isIOS) ? 'true' : 'false';
     try {
       await sess.runJs('''
         window.__NYE_FIREBASE_DB_URL__ = $safeFbUrl;
         window.__NYE_NATIVE_DEVICE_ID__ = $safeDevId;
+        window.__NYE_IOS_NATIVE_AUDIO__ = $iosNativeAudio;
         try {
           localStorage.setItem('nye_device_id', $safeDevId);
           localStorage.setItem('nye_firebase_db_url', $safeFbUrl);
@@ -470,6 +487,9 @@ class _PartyShellScreenState extends State<PartyShellScreen> {
       if (type == 'haptic') {
         final style = data['style'] as String? ?? 'medium';
         await _adapter.triggerHaptic(style);
+      } else if (type == 'play_wav') {
+        final wavB64 = data['wavBase64'] as String? ?? '';
+        await _adapter.playNativeWav(wavB64);
       } else if (type == 'request_permission') {
         await _adapter.requestNotificationPermission();
       } else if (type == 'notify') {

@@ -1710,3 +1710,102 @@ html, body {
 }
 
 
+
+/* ==================== v1.0.3：棄權列、反悔退注、成就獨立行、回合勝負彈窗、行動端排版優化 ==================== */
+input, textarea, select, .input-dark {
+  -webkit-user-select: text;
+  user-select: text;
+  touch-action: manipulation;
+  font-size: 16px; /* iOS 低於 16px 會自動放大頁面並干擾首次聚焦 */
+}
+
+.forfeit-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(251, 113, 133, 0.35);
+}
+
+.bet-regret-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rule-achv-line {
+  margin-top: 7px;
+  padding: 6px 9px;
+  border-radius: 9px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px dashed rgba(251, 191, 36, 0.45);
+  color: #fde68a;
+  line-height: 1.5;
+}
+
+.stage-rule-txt {
+  line-height: 1.55;
+  color: #cbd5e1;
+}
+
+/* 回合勝負即時彈窗 */
+.round-fx-icon {
+  font-size: 54px;
+  line-height: 1.1;
+  margin-bottom: 6px;
+  animation: roundPop 0.35s ease-out;
+}
+.round-fx-title {
+  font-size: 21px;
+  font-weight: 900;
+  color: #fef08a;
+  margin-bottom: 6px;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.round-fx-detail {
+  font-size: 13px;
+  color: #cbd5e1;
+  background: rgba(9, 13, 24, 0.65);
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+.result-splash-card.fx-lose {
+  background: radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.25), rgba(15, 23, 42, 0.98) 72%);
+}
+.result-splash-card.fx-lose .round-fx-title { color: #bae6fd; }
+.result-splash-card.fx-neutral {
+  background: radial-gradient(circle at 50% 0%, rgba(148, 163, 184, 0.22), rgba(15, 23, 42, 0.98) 72%);
+}
+@keyframes roundPop {
+  0% { transform: scale(0.4); opacity: 0; }
+  70% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+/* 行動端排版：中文避免單字孤行、膠囊標籤與金額不拆行 */
+.rule-block-inner, .muted-sm, .muted-xs, .section-title, .q-title, .toast-inline, .locked-bet-msg, .my-bet-tag {
+  line-break: strict;
+  overflow-wrap: anywhere;
+}
+.q-tag, .hh-tag, .scene-pill, .badge-pill, .status-badge, .chip-btn, .delta-chip {
+  white-space: nowrap;
+}
+.quota-item { flex-wrap: wrap; }
+.quota-badges { justify-content: flex-end; }
+.btn { line-height: 1.35; }
+.host-row .btn { flex: 1 1 auto; }
+
+@media (max-width: 390px) {
+  html, body { font-size: 14.5px; }
+  .section-card, .hero-profile-card, .table-card, .theme-stage-card { padding: 13px; }
+  .btn { padding: 9px 12px; font-size: 14px; }
+  .btn-sm { padding: 7px 10px; font-size: 12.5px; }
+  .q-tag { font-size: 10.5px; padding: 2px 6px; }
+  .rule-guide-box { font-size: 12.4px; }
+  .owner-pick-grid, .bet-btn-grid { gap: 6px; }
+}

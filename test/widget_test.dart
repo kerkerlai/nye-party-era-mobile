@@ -83,6 +83,13 @@ class FakePartyNativeAdapter implements PartyNativeAdapter {
     haptics.add(style);
   }
 
+  final List<int> nativeWavPlays = <int>[];
+
+  @override
+  Future<void> playNativeWav(String wavBase64) async {
+    nativeWavPlays.add(wavBase64.length);
+  }
+
   @override
   Future<void> requestNotificationPermission() async {
     permissionRequests++;
@@ -362,6 +369,7 @@ void main() {
 
         adapter.emitBridgeMessage('{"type":"haptic","style":"medium"}');
         adapter.emitBridgeMessage('{"type":"haptic","style":"heavy"}');
+        adapter.emitBridgeMessage('{"type":"play_wav","wavBase64":"UklGRiQAAABXQVZF"}');
         adapter.emitBridgeMessage('{"type":"request_permission"}');
         adapter.emitBridgeMessage(
           '{"type":"notify","title":"🔥 新賽桌開盤！","body":"終極密碼生死鬥集結中"}',
@@ -373,6 +381,7 @@ void main() {
         await tester.pump();
 
         expect(adapter.haptics, <String>['medium', 'heavy']);
+        expect(adapter.nativeWavPlays, <int>[16]);
         expect(adapter.permissionRequests, 1);
         expect(adapter.shownNotifications.length, 2);
         expect(adapter.shownNotifications[0]['id'], 1);
@@ -533,6 +542,8 @@ void main() {
         appDelegate.contains('UNUserNotificationCenter.current().delegate'),
         isTrue,
       );
+      expect(appDelegate.contains('setCategory(.playback'), isTrue);
+      expect(appDelegate.contains('com.kerkerlai.nyepartyera/audio'), isTrue);
 
       final iosMarketingIcon = File(
         'ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png',

@@ -42,6 +42,7 @@
     minimizedRoomIds: new Set(),
     lastAutoOpenedStatus: {},
     quickDrawTimers: {},
+    localDrawState: {},
     blindStopwatchStart: {},
     fiveSecTimer: null,
 
@@ -51,7 +52,7 @@
         (tables || []).find(
           (t) =>
             (t.status === "open" || t.status === "playing" || t.status === "settling") &&
-            (t.participants || []).some((p) => p.id === playerId)
+            (t.participants || []).some((p) => p.id === playerId && !p.forfeited)
         ) || null
       );
     },
@@ -133,27 +134,32 @@
       (ctx.players || []).forEach((p) => (playerMap[p.id] = p));
       const gameMeta =
         CFG.PARTY_GAMES.find((x) => x.id === targetTable.game_type) || CFG.PARTY_GAMES[0];
-      const amIn = (targetTable.participants || []).some((p) => p.id === ctx.me.id);
+      const amIn = (targetTable.participants || []).some(
+        (p) => p.id === ctx.me.id && !p.forfeited
+      );
 
       overlay.classList.remove("hidden");
-      sheet.innerHTML = `
+      const nextSheetHtml = `
         <div class="game-room-topbar">
           <div style="min-width:0;flex:1;">
             <div style="font-weight:900;font-size:15.5px;color:#fef08a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
               ${gameMeta.icon} ${esc(targetTable.title)}
             </div>
             <div class="muted-xs">
-              ${amIn ? "⚔️ 你的專屬獨立對戰室（完賽後自動結算關閉）" : "👀 旁觀／場邊押注模式"}
+              ${amIn ? "⚔️ 專屬對戰室（完賽自動結算）" : "👀 旁觀／場邊下注模式"}
             </div>
           </div>
           <button type="button" class="btn btn-secondary btn-xs" onclick="PartyGamesUI.minimizeRoomWindow()">
-            ${amIn ? "🔽 縮小回大廳" : "✕ 關閉視窗"}
+            ${amIn ? "🔽 縮小" : "✕ 關閉"}
           </button>
         </div>
         <div class="game-room-body">
           ${this.renderTableCard(targetTable, ctx, playerMap)}
         </div>
       `;
+      if (this._lastOverlayHtml === nextSheetHtml) return;
+      this._lastOverlayHtml = nextSheetHtml;
+      sheet.innerHTML = nextSheetHtml;
 
       const nextBody = sheet.querySelector(".game-room-body");
       if (nextBody) nextBody.scrollTop = prevScroll;
@@ -177,10 +183,19 @@
         CFG.getDynamicScoringRule
           ? CFG.getDynamicScoringRule(gameMeta, globalCfg || window.PartyApp?.data?.globalCfg)
           : gameMeta.scoringRule || "";
+      const dynAchv =
+        CFG.getDynamicAchievementRule
+          ? CFG.getDynamicAchievementRule(gameMeta)
+          : gameMeta.achievementRule || "";
       const body = `
         <div class="rule-block-inner">
           <div><b class="cyan-text">🎯 玩法規則（${gameMeta.minPlayers}～${gameMeta.maxPlayers}人）：</b>${esc(gameMeta.howToPlay || gameMeta.desc)}</div>
-          <div style="margin-top:5px;"><b class="gold-text">💰 計分派彩：</b>${esc(dynScoring)}</div>
+          <div style="margin-top:5px;"><b class="gold-text">💰 計分獎金：</b>${esc(dynScoring)}</div>
+          ${
+            dynAchv
+              ? `<div class="rule-achv-line"><b>🏅 專屬成就：</b>${esc(dynAchv)}</div>`
+              : ""
+          }
         </div>
       `;
       if (!collapsible) {
@@ -188,7 +203,7 @@
       }
       return `
         <details class="rule-guide-box" ${defaultOpen ? "open" : ""}>
-          <summary>📖 點此查看【${esc(gameMeta.name)}】詳細玩法 ＆ 計分規則</summary>
+          <summary>📖 查看【${esc(gameMeta.name)}】玩法 ＆ 獎金規則</summary>
           ${body}
         </details>
       `;
@@ -241,32 +256,33 @@
             <span class="scene-pill ${forceTestOnly ? "pill-cyan" : isHappy ? "pill-fire" : "pill-gold"}">
               ${
                 forceTestOnly
-                  ? "🧪 新手試玩練習場（每款遊戲皆可免費開 1 次不計分測試局！）"
+                  ? "🧪 新手練習場（每款可免費試玩 1 次！）"
                   : isHappy
-                  ? "🔥 限時加成 Happy Hour（選手獎池／過關淨利 +50%！）"
-                  : "🎲 Party Game 自由賽桌時段"
+                  ? "🔥 限時加成 Happy Hour（總獎金 +50%！）"
+                  : "🎲 Party Game 自由賽桌"
               }
             </span>
             ${
               myActiveTbl
-                ? `<button class="btn btn-gold btn-sm" onclick="PartyGamesUI.openRoomWindow('${myActiveTbl.id}')">🎮 回到我的房間</button>`
+                ? `<button class="btn btn-gold btn-sm" onclick="PartyGamesUI.openRoomWindow('${myActiveTbl.id}')">🎮 回到房間</button>`
                 : `<button class="btn ${forceTestOnly ? "btn-primary" : "btn-gold"} btn-sm" onclick="PartyGamesUI.openCreateModal(${forceTestOnly})">
-                     ${forceTestOnly ? "🧪 開免費測試局" : "➕ 開新賽桌"}
+                     ${forceTestOnly ? "🧪 開測試局" : "➕ 開新賽桌"}
                    </button>`
             }
           </div>
           ${
             forceTestOnly
               ? `<p class="muted-xs" style="margin-top:7px;">
-                   💡 第一次加入的朋友可把 7 款遊戲各開 1 次「0 分測試局」熟悉操作！支援揪線上朋友一起試玩，沒人有空時也可一鍵召喚 <b>🤖 AI 陪練員</b> 單人實測！
+                   💡 每款小遊戲皆有 <b>1 次免費測試機會</b>（開房或加入別人的測試房皆計入），也可召喚 <b>🤖 AI 陪練員</b> 單人熟悉玩法！
                  </p>`
               : `<details class="rule-guide-box" style="margin-top:9px;margin-bottom:0;">
-                  <summary>📜 賽桌通用計分 ＆ 場邊下注規則（每日 08:00 重置次數）</summary>
+                  <summary>📜 賽桌計分 ＆ 下注規則（每日 08:00 重置額度）</summary>
                   <div class="rule-block-inner">
-                    <div>• <b>🚪 獨立房間制（一次限玩 1 局）</b>：每人同時只能參加 1 個賽桌，進入房間後會彈出獨立對戰視窗，不怕大廳房間多畫面亂！</div>
-                    <div style="margin-top:4px;">• <b>⚔️ 參賽計分與陪玩制（每日 ${g.maxScoringPlaysPerGamePerDay} 次／款）</b>：每款遊戲每日前 ${g.maxScoringPlaysPerGamePerDay} 局押入場費 <b>${g.partyPlayStake} PT</b> 正常計分；滿 ${g.maxScoringPlaysPerGamePerDay} 次後可繼續免費<b>「🤝 陪其他人玩」</b>（你自己輸贏皆 0 分，但還沒滿 ${g.maxScoringPlaysPerGamePerDay} 次的對手仍會照常得分或失分！）。</div>
-                    <div style="margin-top:4px;">• <b>💰 場邊局外人對賭（每日 ${g.maxBetsPerGamePerDay} 次／款）</b>：沒下場的觀眾可點進房間押 <b>${g.partyBetStake} PT</b> 猜贏家（與參賽次數獨立計算！）。<b>需雙邊不同選項都有人押才成立彩池</b>，單邊或無人猜中 <b>100% 全額退回本金</b>！</div>
-                    <div style="margin-top:4px;">• <b>🔥 Happy Hour 限時加成</b>：系統免費額外補貼選手總獎池（或合作過關淨利）<b>+${Math.round((Number(g.happyHourBonusRate) || 0.5) * 100)}%</b>！每日首桌完賽桌長再拿【🚀 破冰先鋒 +25 PT】。</div>
+                    <div>• <b>🚪 獨立對戰室</b>：每人同時限參加 1 桌，進房自動開啟專屬視窗。</div>
+                    <div style="margin-top:4px;">• <b>⚔️ 參賽與陪玩（每日 ${g.maxScoringPlaysPerGamePerDay} 次／款）</b>：前 ${g.maxScoringPlaysPerGamePerDay} 局押 <b>${g.partyPlayStake} PT</b> 搶總獎金；滿額後可免費<b>「🤝 陪玩」</b>（自己輸贏 0 分，未滿額對手照常計分）。</div>
+                    <div style="margin-top:4px;">• <b>💰 場邊觀眾下注（每日 ${g.maxBetsPerGamePerDay} 次／款）</b>：開賽前可押 <b>${g.partyBetStake} PT</b> 猜贏家（開賽前皆可反悔退注）。需雙邊有人押才成立獎金，單邊或無人猜中全額退回！</div>
+                    <div style="margin-top:4px;">• <b>🔥 限時加成</b>：系統額外補貼對戰總獎金 <b>+${Math.round((Number(g.happyHourBonusRate) || 0.5) * 100)}%</b>！</div>
+                    <div class="rule-achv-line"><b>🏅 專屬成就：</b>🚀【破冰先鋒 +25 PT】— 每日首位成功開桌完賽正式局的桌長自動獲得！</div>
                   </div>
                 </details>`
           }
@@ -276,40 +292,42 @@
           activeTables.length === 0
             ? `<div class="empty-card">
                 <div style="font-size:34px;margin-bottom:6px;">${forceTestOnly ? "🧪" : "🎯"}</div>
-                <div style="font-weight:700;font-size:16px;">${forceTestOnly ? "目前沒有進行中的試玩測試桌" : "目前客廳沒有進行中的賽桌"}</div>
+                <div style="font-weight:700;font-size:16px;">${forceTestOnly ? "目前沒有進行中的測試桌" : "目前沒有進行中的賽桌"}</div>
                 <div class="muted-sm" style="margin:6px 0 14px;">
                   ${
                     forceTestOnly
-                      ? "點下方按鈕任選一款遊戲開啟你的 1 次免費不計分測試局（可揪人或召喚 AI 陪練員）！"
-                      : "快開第一桌揪大家過來玩（開房或參賽後會自動彈出專屬對戰視窗）！"
+                      ? "任選一款尚未試玩的遊戲開啟免費測試局（可揪人或補 AI 陪練員）！"
+                      : "快開第一桌揪大家對決，或場邊下注贏獎金！"
                   }
                 </div>
                 <button class="btn ${forceTestOnly ? "btn-primary" : "btn-gold"}" onclick="PartyGamesUI.openCreateModal(${forceTestOnly})">
-                  ${forceTestOnly ? "🧪 立即開啟不計分測試局" : "➕ 立即建立賽桌（1～3 分鐘揪團）"}
+                  ${forceTestOnly ? "🧪 開啟免費測試局" : "➕ 建立新賽桌"}
                 </button>
               </div>`
             : activeTables.map((t) => this.renderLobbyDoorCard(t, ctx, playerMap, myActiveTbl)).join("")
         }
 
         <div class="section-card" style="margin-top:16px;">
-          <div class="section-title">📊 ${forceTestOnly ? "7 款遊戲新手試玩額度 ＆ 玩法規則一覽" : `我今日各遊戲額度 ＆ 7 款玩法計分一覽（${esc(dayKey)}｜每日 08:00 重置）`}</div>
-          <p class="muted-xs" style="margin-bottom:8px;">點擊任一款遊戲即可展開查看該遊戲的完整玩法與計分規則：</p>
+          <div class="section-title">📊 ${forceTestOnly ? "7 款小遊戲試玩 ＆ 規則一覽" : `今日各遊戲額度 ＆ 規則（${esc(dayKey)}）`}</div>
+          <p class="muted-xs" style="margin-bottom:8px;">點擊任一遊戲可展開玩法、獎金與成就說明：</p>
           <div class="quota-grid">
             ${CFG.PARTY_GAMES.map((gm) => {
               const u = window.PartyEngine.getDailyGameUsage(me.id, gm.id, dayKey, tables, bets);
-              const testUsed = window.PartyEngine.getTestHostUsage(me.id, gm.id, tables);
+              const testUsed = window.PartyEngine.getTestHostUsage(me.id, gm.id, tables, me);
               const playFull = u.playCount >= g.maxScoringPlaysPerGamePerDay;
               const betFull = u.betCount >= g.maxBetsPerGamePerDay;
               return `
                 <details class="quota-details-card">
                   <summary class="quota-item" style="border-bottom:none;cursor:pointer;list-style:none;">
-                    <div class="quota-name">${gm.icon} <b>${esc(gm.name)}</b> <span class="muted-xs">▾規則</span></div>
+                    <div class="quota-name">${gm.icon} <b>${esc(gm.name)}</b> <span class="muted-xs">▾</span></div>
                     <div class="quota-badges">
-                      <span class="q-tag ${testUsed >= 1 ? "q-muted" : "q-ok"}">🧪測試 ${Math.min(1, testUsed)}/1</span>
+                      ${testUsed < 1 ? `<span class="q-tag q-ok">🧪 測試 0/1</span>` : ""}
                       ${
                         !forceTestOnly
                           ? `<span class="q-tag ${playFull ? "q-muted" : "q-ok"}">參賽 ${u.playCount}/${g.maxScoringPlaysPerGamePerDay}</span>
                              <span class="q-tag ${betFull ? "q-lock" : "q-bet"}">下注 ${u.betCount}/${g.maxBetsPerGamePerDay}</span>`
+                          : testUsed >= 1
+                          ? `<span class="q-tag q-muted">✅ 已完成試玩</span>`
                           : ""
                       }
                     </div>
@@ -349,7 +367,8 @@
       const g = { ...CFG.DEFAULTS, ...(globalCfg || {}) };
       const gameMeta = CFG.PARTY_GAMES.find((x) => x.id === table.game_type) || CFG.PARTY_GAMES[0];
       const parts = table.participants || [];
-      const amIn = parts.some((p) => p.id === me.id);
+      const activeParts = parts.filter((p) => !p.forfeited);
+      const amIn = activeParts.some((p) => p.id === me.id);
       const tableBets = (bets || []).filter((b) => b.table_id === table.id);
       const myBet = tableBets.find((b) => b.bettor_id === me.id);
       const usage = window.PartyEngine.getDailyGameUsage(
@@ -359,6 +378,7 @@
         tables,
         bets
       );
+      const myTestUsed = window.PartyEngine.getTestHostUsage(me.id, table.game_type, tables, me);
       const canJoinMore = parts.length < gameMeta.maxPlayers;
       const nextIsScoring = usage.playCount < g.maxScoringPlaysPerGamePerDay;
       const busyElsewhere = Boolean(myActiveTbl && myActiveTbl.id !== table.id);
@@ -385,37 +405,37 @@
                 table.is_test_run
                   ? `<span class="scene-pill pill-cyan" style="margin-left:4px;font-size:11px;">🧪 測試局(0分)</span>`
                   : table.is_happy_hour
-                  ? `<span class="hh-tag">🔥 獎池+${Math.round((Number(g.happyHourBonusRate) || 0.5) * 100)}%</span>`
+                  ? `<span class="hh-tag">🔥 獎金+${Math.round((Number(g.happyHourBonusRate) || 0.5) * 100)}%</span>`
                   : ""
               }
               ${
                 table.status === "open"
                   ? minNeed > 0
-                    ? `<span class="hh-tag" style="background:linear-gradient(135deg,#f97316,#e11d48);">🔥 差 ${minNeed} 人開局！</span>`
+                    ? `<span class="hh-tag" style="background:linear-gradient(135deg,#f97316,#e11d48);">差 ${minNeed} 人開局</span>`
                     : canJoinMore
-                    ? `<span class="q-tag q-ok" style="margin-left:4px;">🟢 人數達標可開戰</span>`
-                    : `<span class="q-tag q-muted" style="margin-left:4px;">🔒 已滿員</span>`
+                    ? `<span class="q-tag q-ok" style="margin-left:4px;">🟢 可開戰</span>`
+                    : `<span class="q-tag q-muted" style="margin-left:4px;">🔒 已滿</span>`
                   : ""
               }
             </div>
             <span class="status-badge st-${table.status} ${table.status === "open" ? "live-countdown" : ""}" ${table.status === "open" ? `data-until="${esc(table.opens_until)}"` : ""}>
               ${
                 table.status === "open"
-                  ? `⏳ 集結＆下注倒數 ${mm}:${ss}`
+                  ? `⏳ 集結 ${mm}:${ss}`
                   : table.status === "playing"
-                  ? "⚔️ 對戰進行中"
-                  : "⚖️ 確認勝負中"
+                  ? "⚔️ 對戰中"
+                  : "⚖️ 確認勝負"
               }
             </span>
           </div>
 
           <div class="muted-xs" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
-            <span>👑 房主：<b>${esc(hostName)}</b> ｜ 🏃 選手 (${parts.length}/${gameMeta.maxPlayers})：<b>${parts.map((p) => esc(p.name)).join("、") || "等待加入"}</b></span>
+            <span>👑 房主：<b>${esc(hostName)}</b> ｜ 🏃 選手 (${activeParts.length}/${gameMeta.maxPlayers})：<b>${activeParts.map((p) => esc(p.name)).join("、") || "等待加入"}</b></span>
             ${
               myBet
-                ? `<span class="gold-text">💰 你已押：${esc(myBet.pick_label)}</span>`
+                ? `<span class="gold-text">💰 已押：${esc(myBet.pick_label)}${table.status === "open" ? " (可進房反悔)" : ""}</span>`
                 : !table.is_test_run && tableBets.length > 0
-                ? `<span class="cyan-text">💰 場邊彩池 ${tableBets.length} 注</span>`
+                ? `<span class="cyan-text">💰 下注獎金 ${tableBets.length * (Number(table.bet_stake) || 10)} PT</span>`
                 : ""
             }
           </div>
@@ -424,18 +444,20 @@
             ${
               amIn
                 ? `<button class="btn btn-gold btn-sm" style="width:100%;" onclick="PartyGamesUI.openRoomWindow('${table.id}')">
-                     🎮 進入我的獨立對戰視窗
+                     🎮 進入我的對戰室
                    </button>`
                 : table.status === "open"
                 ? `
                     ${
                       busyElsewhere
-                        ? `<button class="btn btn-secondary btn-xs" style="flex:1;" disabled>🔒 你正在另一房參賽中（限玩1局）</button>`
+                        ? `<button class="btn btn-secondary btn-xs" style="flex:1;" disabled>🔒 你正在另一房參賽中</button>`
+                        : table.is_test_run && myTestUsed >= 1
+                        ? `<button class="btn btn-secondary btn-xs" style="flex:1;" disabled>✅ 此款測試機會已用</button>`
                         : canJoinMore && !myBet
                         ? `<button class="btn btn-primary btn-sm" style="flex:1.2;" onclick="PartyGamesUI.joinTable('${table.id}')">
                              🙋 ${
                                table.is_test_run
-                                 ? "加入測試(0分)"
+                                 ? "加入測試(扣試玩1次)"
                                  : nextIsScoring
                                  ? `加入參賽(-${table.stake} PT)`
                                  : "🤝 陪玩參賽(0分)"
@@ -444,11 +466,11 @@
                         : ""
                     }
                     <button class="btn btn-secondary btn-sm" style="flex:1;" onclick="PartyGamesUI.openRoomWindow('${table.id}')">
-                      ${table.is_test_run ? "👀 查看房間" : `💰 進房下注／觀戰 (${tableBets.length}注)`}
+                      ${table.is_test_run ? "👀 查看房間" : myBet ? "↺ 進房改注／觀戰" : `💰 進房下注 (${tableBets.length}注)`}
                     </button>
                   `
                 : `<button class="btn btn-secondary btn-sm" style="width:100%;" onclick="PartyGamesUI.openRoomWindow('${table.id}')">
-                     👀 點擊進入視窗觀戰${myBet ? `（已押：${esc(myBet.pick_label)}）` : ""}
+                     👀 進入觀戰${myBet ? `（已押：${esc(myBet.pick_label)}）` : ""}
                    </button>`
             }
           </div>
@@ -461,7 +483,7 @@
       const g = { ...CFG.DEFAULTS, ...(globalCfg || {}) };
       const gameMeta = CFG.PARTY_GAMES.find((x) => x.id === table.game_type) || CFG.PARTY_GAMES[0];
       const parts = table.participants || [];
-      const amIn = parts.some((p) => p.id === me.id);
+      const amIn = parts.some((p) => p.id === me.id && !p.forfeited);
       const isHost = table.host_id === me.id;
       const tableBets = (bets || []).filter((b) => b.table_id === table.id);
       const myBet = tableBets.find((b) => b.bettor_id === me.id);
@@ -487,9 +509,9 @@
               <span class="game-chip">${gameMeta.icon} ${esc(table.title)}</span>
               ${
                 table.is_test_run
-                  ? `<span class="scene-pill pill-cyan" style="margin-left:4px;font-size:11px;">🧪 新手測試局 (0分)</span>`
+                  ? `<span class="scene-pill pill-cyan" style="margin-left:4px;font-size:11px;">🧪 測試局 (0分)</span>`
                   : table.is_happy_hour
-                  ? `<span class="hh-tag">🔥 獎池+50%</span>`
+                  ? `<span class="hh-tag">🔥 獎金+50%</span>`
                   : ""
               }
             </div>
@@ -498,10 +520,10 @@
                 table.status === "open"
                   ? table.is_test_run
                     ? `⏳ 試玩集結 ${mm}:${ss}`
-                    : `⏳ 集結＆下注倒數 ${mm}:${ss}`
+                    : `⏳ 集結 ${mm}:${ss}`
                   : table.status === "playing"
-                  ? "⚔️ 對戰進行中"
-                  : "⚖️ 等待確認勝負"
+                  ? "⚔️ 對戰中"
+                  : "⚖️ 確認勝負"
               }
             </span>
           </div>
@@ -527,7 +549,7 @@
                     table.status === "open" &&
                     p.id === me.id &&
                     table.game_type === "soul_sync_2v2";
-                  return `<div class="part-chip ${p.isScoring ? "scoring" : "fun-only"}">
+                  return `<div class="part-chip ${p.forfeited ? "fun-only" : p.isScoring ? "scoring" : "fun-only"}" ${p.forfeited ? 'style="opacity:0.5;text-decoration:line-through;"' : ""}>
                     ${avatarHtml(pl, 24)}
                     <span>${esc(pl.name)}</span>
                     ${
@@ -535,7 +557,7 @@
                         ? `<em class="team-badge" ${canSwapTeam ? `style="cursor:pointer;" title="點擊切換組別" onclick="PartyGamesUI.swapMyTeam('${table.id}')"` : ""}>${esc(p.teamLabel || p.team)}${canSwapTeam ? " ⇄" : ""}</em>`
                         : ""
                     }
-                    <small>${table.is_test_run ? "測試0分" : p.isScoring ? `押${table.stake}` : "🤝陪玩0分"}</small>
+                    <small>${p.forfeited ? "🏳️已棄權" : table.is_test_run ? "測試0分" : p.isScoring ? `押${table.stake}` : "🤝陪玩0分"}</small>
                   </div>`;
                 })
                 .join("")}
@@ -544,18 +566,24 @@
 
           ${
             table.status === "open"
-              ? this.renderOpenControls(table, gameMeta, me, amIn, isHost, usage, myBet, tableBets, g, remainSec)
+              ? this.renderOpenControls(table, gameMeta, me, amIn, isHost, usage, myBet, tableBets, g, remainSec, ctx)
               : this.renderPlayingArea(table, gameMeta, ctx, playerMap, amIn, isHost, tableBets, myBet)
           }
         </div>
       `;
     },
 
-    renderOpenControls(table, gameMeta, me, amIn, isHost, usage, myBet, tableBets, g, remainSec) {
+    renderOpenControls(table, gameMeta, me, amIn, isHost, usage, myBet, tableBets, g, remainSec, ctx = null) {
       const parts = table.participants || [];
       const canJoinMore = parts.length < gameMeta.maxPlayers;
       const nextIsScoring = usage.playCount < g.maxScoringPlaysPerGamePerDay;
       const betLeft = g.maxBetsPerGamePerDay - usage.betCount;
+      const myTestUsed = window.PartyEngine.getTestHostUsage(
+        me.id,
+        table.game_type,
+        ctx?.tables || window.PartyApp?.data?.tables || [],
+        me
+      );
 
       // 下注選項
       let betTargets = [];
@@ -580,15 +608,17 @@
         <div class="open-actions">
           ${
             !amIn && canJoinMore && !myBet
-              ? `<button class="btn btn-primary" onclick="PartyGamesUI.joinTable('${table.id}')">
-                  🙋 加入${
-                    table.is_test_run
-                      ? "免費測試局（0 押注 0 得分）"
-                      : nextIsScoring
-                      ? `參賽（計分局 ${usage.playCount + 1}/${g.maxScoringPlaysPerGamePerDay}，押 ${table.stake} PT）`
-                      : `陪玩參賽（你已滿 ${g.maxScoringPlaysPerGamePerDay} 次輸贏 0 分；未滿對手照常計分！）`
-                  }
-                </button>`
+              ? table.is_test_run && myTestUsed >= 1
+                ? `<div class="locked-bet-msg" style="text-align:center;">✅ 你已使用過本遊戲的 1 次免費測試機會囉！</div>`
+                : `<button class="btn btn-primary" onclick="PartyGamesUI.joinTable('${table.id}')">
+                    🙋 加入${
+                      table.is_test_run
+                        ? "免費測試局（扣此款 1 次試玩機會）"
+                        : nextIsScoring
+                        ? `參賽（第 ${usage.playCount + 1}/${g.maxScoringPlaysPerGamePerDay} 局，押 ${table.stake} PT）`
+                        : `陪玩參賽（已滿 ${g.maxScoringPlaysPerGamePerDay} 次輸贏 0 分；對手照常計分）`
+                    }
+                  </button>`
               : amIn && !isHost
               ? `<button class="btn btn-ghost btn-sm" onclick="PartyGamesUI.leaveTable('${table.id}')">退出參賽</button>`
               : ""
@@ -596,7 +626,7 @@
 
           ${
             invalidSoulCount
-              ? `<div class="muted-xs" style="color:#fcd34d;">🤝 靈魂默契支援「2 人合作闖關」或「4 人雙組 2v2 對抗」，目前 3 人請再等 1 位夥伴加入！</div>`
+              ? `<div class="muted-xs" style="color:#fcd34d;">🤝 靈魂默契需為「2 人合作」或「4 人對抗」，目前 3 人請再等 1 位夥伴加入！</div>`
               : ""
           }
 
@@ -614,17 +644,17 @@
                       : Math.max(0, gameMeta.minPlayers - parts.length);
                   return `<div class="host-row">
                     <button class="btn btn-gold" ${!canStartNow ? "disabled" : ""} onclick="PartyGamesUI.startTable('${table.id}')">
-                      🚀 ${remainSec === 0 ? "時間到！立即開賽" : `人齊提前開賽（${table.game_type === "soul_sync_2v2" ? "2人合作 / 4人對抗" : `至少 ${gameMeta.minPlayers} 人`}）`}
+                      🚀 ${remainSec === 0 ? "時間到！立即開賽" : `人齊開賽（${table.game_type === "soul_sync_2v2" ? "2人/4人" : `至少${gameMeta.minPlayers}人`}）`}
                     </button>
                     ${
                       !table.is_test_run && canJoinMore
                         ? `<button class="btn btn-primary btn-sm" ${nudgeCoolSec > 0 ? "disabled" : ""} onclick="PartyGamesUI.nudgeTablePlayers('${table.id}')">
                              📢 ${
                                nudgeCoolSec > 0
-                                 ? `已廣播催人 (${nudgeCoolSec}s)`
+                                 ? `已廣播 (${nudgeCoolSec}s)`
                                  : minNeed > 0
-                                 ? `一鍵廣播催人（差 ${minNeed} 人開局！）`
-                                 : "一鍵廣播揪人加碼進房！"
+                                 ? `廣播催人（差 ${minNeed} 人）`
+                                 : "廣播揪人進房"
                              }
                            </button>`
                         : ""
@@ -632,7 +662,7 @@
                     ${
                       table.is_test_run && !canStartNow
                         ? `<button class="btn btn-primary btn-sm" onclick="PartyGamesUI.startTestWithBots('${table.id}')">
-                             🤖 補齊 AI 陪練員・立即單人試玩！
+                             🤖 補 AI 陪練員單人試玩
                            </button>`
                         : ""
                     }
@@ -640,7 +670,7 @@
                   </div>`;
                 })()
               : remainSec === 0 && canStartNow
-              ? `<button class="btn btn-gold" onclick="PartyGamesUI.startTable('${table.id}')">⏰ 集結時間到！點此啟動對戰</button>`
+              ? `<button class="btn btn-gold" onclick="PartyGamesUI.startTable('${table.id}')">⏰ 集結時間到！點此開戰</button>`
               : ""
           }
         </div>
@@ -648,23 +678,26 @@
         ${
           table.is_test_run
             ? `<div class="betting-panel">
-                 <div class="muted-xs" style="color:#7dd3fc;">🧪 此為「新手免費測試局」：全桌 0 押注、0 得分、不開放場邊下注，也不消耗每日 3 次正式計分額度！（取消賽桌可退回測試次數）</div>
+                 <div class="muted-xs" style="color:#7dd3fc;">🧪 免費測試局：0 押注、0 得分、不開放下注；開戰後將扣除參與者本遊戲的 1 次試玩機會。</div>
                </div>`
-            : `<!-- 場邊局外人下注區 -->
+            : `<!-- 場邊觀眾下注區 -->
                <div class="betting-panel">
                  <div class="bet-header">
-                   <span>💰 場邊局外人互賭彩池（目前 ${tableBets.length} 注 / 共 ${tableBets.length * table.bet_stake} PT）</span>
-                   <span class="muted-xs">需雙邊有人對賭才成立，單邊自動退費</span>
+                   <span>💰 場邊下注總獎金（${tableBets.length} 注 / 共 ${tableBets.length * table.bet_stake} PT）</span>
+                   <span class="muted-xs">開賽前可反悔退注；雙邊對賭才成立</span>
                  </div>
                  ${
                    amIn
                      ? `<div class="muted-xs">你是本局參賽選手，專心應戰！（場外觀眾可下注）</div>`
                      : myBet
-                     ? `<div class="my-bet-tag">✅ 你已押注：<b>${esc(myBet.pick_label)}</b>（${myBet.amount} PT，今日此遊戲下注 ${usage.betCount}/${g.maxBetsPerGamePerDay}）</div>`
+                     ? `<div class="my-bet-tag bet-regret-row">
+                          <span>✅ 已押：<b>${esc(myBet.pick_label)}</b>（${myBet.amount} PT，今日 ${usage.betCount}/${g.maxBetsPerGamePerDay}）</span>
+                          <button type="button" class="btn btn-ghost btn-xs" style="border-color:rgba(251,191,36,0.65);color:#fde047;flex-shrink:0;" onclick="PartyGamesUI.cancelMyBet('${table.id}')">↺ 反悔退注</button>
+                        </div>`
                      : betLeft <= 0
-                     ? `<div class="locked-bet-msg">🔒 你今日在「${esc(gameMeta.name)}」下注已滿 ${g.maxBetsPerGamePerDay}/${g.maxBetsPerGamePerDay} 次（去別款遊戲房間仍可下注！）</div>`
+                     ? `<div class="locked-bet-msg">🔒 今日「${esc(gameMeta.name)}」下注已滿 ${g.maxBetsPerGamePerDay}/${g.maxBetsPerGamePerDay} 次（別款遊戲仍可押！）</div>`
                      : betTargets.length < 2
-                     ? `<div class="muted-xs">等待至少 2 位選手入座後即可開放場邊押注…</div>`
+                     ? `<div class="muted-xs">等待至少 2 位選手入座即可開放場邊下注…</div>`
                      : `<div class="bet-btn-grid">
                          ${betTargets
                            .map(
@@ -701,12 +734,19 @@
 
       // 通用結果申報與對手互認面板（Switch 與所有實體/備援結算共用）
       const settleHtml = this.renderMutualSettlementBox(table, gameMeta, me, amIn, playerMap);
+      const forfeitBarHtml = amIn
+        ? `<div class="forfeit-bar">
+             <span class="muted-xs">對方遲遲不出牌或想提前離場？</span>
+             <button type="button" class="btn btn-danger btn-xs" onclick="PartyGamesUI.confirmForfeitTable('${table.id}')">🏳️ 棄權認輸</button>
+           </div>`
+        : "";
 
       return `
         <div class="playing-stage">
-          ${myBet ? `<div class="my-bet-tag" style="margin-bottom:8px;">💰 你的場邊押注：<b>${esc(myBet.pick_label)}</b>（總彩池 ${tableBets.length * table.bet_stake} PT）</div>` : ""}
+          ${myBet ? `<div class="my-bet-tag" style="margin-bottom:8px;">💰 你的押注：<b>${esc(myBet.pick_label)}</b>（下注獎金 ${tableBets.length * table.bet_stake} PT）</div>` : ""}
           ${innerHtml}
           ${settleHtml}
+          ${forfeitBarHtml}
         </div>
       `;
     },
@@ -730,61 +770,53 @@
     },
 
     renderQuickDraw(table, gs, me, amIn, isHost, ctx) {
-      const parts = table.participants || [];
-      const { mode, ready, times } = this.getMergedQdState(table, gs, ctx?.themeResponses);
-      const canSwitchMode = isHost && !gs.fireAt && Object.keys(times).length === 0;
+      const parts = (table.participants || []).filter((p) => !p.forfeited);
+      const { mode, roundSeq, times } = this.getMergedQdState(table, gs, ctx?.themeResponses);
+      const localDraw = this.localDrawState[table.id];
+      const activeLocal =
+        localDraw && localDraw.roundSeq === roundSeq ? localDraw : null;
+      const canSwitchMode =
+        isHost && !activeLocal && Object.keys(times).length === 0;
       const potPreview = table.is_test_run
-        ? "0 PT (測試局)"
-        : `${Math.round(parts.length * (Number(table.stake) || 20) * (table.is_happy_hour ? 1.5 : 1))} PT`;
+        ? "0 PT (測試)"
+        : `${Math.round((table.participants || []).length * (Number(table.stake) || 20) * (table.is_happy_hour ? 1.5 : 1))} PT`;
 
       if (mode === "draw") {
-        const fireAt = gs.fireAt || 0;
-        const now = window.PartyDB.serverNowMs;
-        const isArmed = fireAt > 0 && now < fireAt;
-        const readyCnt = parts.filter((p) => ready[p.id]).length;
+        const myTime = times[me.id];
         const tappedCnt = parts.filter((p) => times[p.id] !== undefined).length;
+        const allTapped = parts.length > 0 && tappedCnt >= parts.length;
         const hasValidScore = parts.some((p) => times[p.id] !== undefined && times[p.id] >= 0);
-
-        if (isArmed && amIn && !this.quickDrawTimers[table.id]) {
-          const wait = Math.max(10, fireAt - now);
-          this.quickDrawTimers[table.id] = setTimeout(() => {
-            delete this.quickDrawTimers[table.id];
-            window.PartyFX.playTone("fire");
-            window.PartyFX.haptic("heavy");
-            window.PartyApp.render();
-          }, wait);
-        }
 
         return `
           <div class="mini-game-box">
             <div class="ss-top" style="margin-bottom:6px;">
               <div class="mini-mode-switch" style="margin-bottom:0;">
-                <button class="chip-btn active" ${!canSwitchMode ? "disabled" : ""} onclick="PartyGamesUI.switchQdMode('${table.id}','draw')">🔫 西部拔槍反應</button>
-                <button class="chip-btn" ${!canSwitchMode ? "disabled" : ""} onclick="PartyGamesUI.switchQdMode('${table.id}','blind10')">⏱️ 盲按 10.000 秒</button>
+                <button class="chip-btn active" ${!canSwitchMode ? "disabled" : ""} onclick="PartyGamesUI.switchQdMode('${table.id}','draw')">🔫 西部拔槍</button>
+                <button class="chip-btn" ${!canSwitchMode ? "disabled" : ""} onclick="PartyGamesUI.switchQdMode('${table.id}','blind10')">⏱️ 盲按 10.000s</button>
               </div>
-              <span class="gold-text" style="font-size:12.5px;">🏆 獨得獎池：${potPreview}</span>
+              <span class="gold-text" style="font-size:12.5px;">🏆 獨得獎金：${potPreview}</span>
             </div>
+            <p class="muted-sm" style="margin:6px 0 10px;">
+              各自點擊開始後，每支手機<b>獨立隨機 2.4～5.0 秒變紅</b>，單獨測量你螢幕變紅後的真實反應毫秒數，全員按完再統一開牌比快慢（絕無網路同步誤差！變紅前偷按淘汰）！
+            </p>
             ${
-              !fireAt
-                ? `<p class="muted-sm" style="margin:6px 0 10px;">全員按下準備後（目前 <b>${readyCnt}/${parts.length}</b> 人），2.5～5.5 秒內螢幕隨機瞬間變紅震動，最快按下者獨吞全場獎池（變紅前偷跑直接淘汰）！</p>
-                  ${
-                    amIn
-                      ? `<button class="btn ${ready[me.id] ? "btn-ghost" : "btn-gold"}" style="width:100%;" onclick="PartyGamesUI.qdReady('${table.id}')">
-                          ${ready[me.id] ? `✅ 已準備（等待其餘夥伴 ${readyCnt}/${parts.length}…）` : "🔫 按下準備拔槍！"}
-                        </button>`
-                      : `<div class="muted-sm">等待 ${parts.length} 位選手準備拔槍（${readyCnt}/${parts.length}）…</div>`
-                  }`
-                : isArmed
-                ? `<div class="qd-pad armed" onclick="${amIn ? `PartyGamesUI.qdTap('${table.id}')` : ""}">
-                    <div style="font-size:28px;">🤫 屏住呼吸…等變紅色！</div>
-                    <div class="muted-xs">現在按下去算偷跑淘汰喔！</div>
-                  </div>`
-                : times[me.id] !== undefined
+              myTime !== undefined
                 ? `<div class="locked-bet-msg" style="text-align:center;margin:10px 0;">
-                    ${times[me.id] < 0 ? "❌ 你偷跑犯規淘汰啦！" : `⚡ 你的拔槍速度：<b class="gold-text">${times[me.id]} ms</b>！`}
+                    ${myTime === -2 ? "🏳️ 已棄權" : myTime < 0 ? "❌ 你偷跑犯規淘汰啦！" : `⚡ 你的純反應速度：<b class="gold-text">${myTime} ms</b>！`}
                     （已完成 ${tappedCnt}/${parts.length} 人）
                   </div>`
-                : `<div class="qd-pad fired" onclick="${amIn ? `PartyGamesUI.qdTap('${table.id}')` : ""}">
+                : !amIn
+                ? `<div class="muted-sm" style="text-align:center;margin:10px 0;">等待選手完成各自拔槍反應測試（${tappedCnt}/${parts.length}）…</div>`
+                : !activeLocal
+                ? `<button class="btn btn-gold" style="width:100%;" onclick="PartyGamesUI.qdStartLocalDraw('${table.id}')">
+                    🔫 點擊進入拔槍待命（等變紅秒按！）
+                  </button>`
+                : activeLocal.phase === "armed"
+                ? `<div class="qd-pad armed" onclick="PartyGamesUI.qdTap('${table.id}')">
+                    <div style="font-size:26px;font-weight:800;">🤫 屏住呼吸…等螢幕變紅！</div>
+                    <div class="muted-xs" style="margin-top:4px;">現在按下去算偷跑淘汰喔！</div>
+                  </div>`
+                : `<div class="qd-pad fired" onclick="PartyGamesUI.qdTap('${table.id}')">
                     <div style="font-size:34px;font-weight:900;">💥 BANG！快按！！</div>
                   </div>`
             }
@@ -794,20 +826,22 @@
                   const v = times[p.id];
                   const txt =
                     v === undefined
-                      ? ready[p.id]
-                        ? "🟢 已準備"
-                        : "⏳ 未準備"
-                      : v < 0
-                      ? "<span style='color:#fda4af;'>❌ 偷跑淘汰</span>"
-                      : `<b class="gold-text">⚡ ${v} ms</b>`;
+                      ? "⏳ 待命／測速中…"
+                      : allTapped || p.id === me.id
+                      ? v === -2
+                        ? "<span class='muted-xs'>🏳️ 棄權</span>"
+                        : v < 0
+                        ? "<span style='color:#fda4af;'>❌ 偷跑淘汰</span>"
+                        : `<b class="gold-text">⚡ ${v} ms</b>`
+                      : "🔒 已完成拔槍（等全員按完揭曉）";
                   return `<div class="qd-multi-row"><span><b>${esc(p.name)}</b></span><span>${txt}</span></div>`;
                 })
                 .join("")}
             </div>
             ${
-              isHost && fireAt > 0 && !isArmed && hasValidScore && tappedCnt < parts.length
+              isHost && hasValidScore && tappedCnt < parts.length
                 ? `<button class="btn btn-secondary btn-xs" style="width:100%;margin-top:8px;" onclick="PartyGamesUI.qdForceSettle('${table.id}')">
-                    🏁 有人離席未按？點此截止並立即結算第 1 名
+                    🏁 有人離席未按？截止並結算第 1 名
                   </button>`
                 : ""
             }
@@ -818,18 +852,18 @@
         const localStart = this.blindStopwatchStart[table.id] || 0;
         const myVal = times[me.id];
         const doneCnt = parts.filter((p) => times[p.id] !== undefined).length;
-        const allDone = doneCnt >= parts.length;
+        const allDone = parts.length > 0 && doneCnt >= parts.length;
 
         return `
           <div class="mini-game-box">
             <div class="ss-top" style="margin-bottom:6px;">
               <div class="mini-mode-switch" style="margin-bottom:0;">
-                <button class="chip-btn" ${!canSwitchMode ? "disabled" : ""} onclick="PartyGamesUI.switchQdMode('${table.id}','draw')">🔫 西部拔槍反應</button>
-                <button class="chip-btn active" ${!canSwitchMode ? "disabled" : ""} onclick="PartyGamesUI.switchQdMode('${table.id}','blind10')">⏱️ 盲按 10.000 秒</button>
+                <button class="chip-btn" ${!canSwitchMode ? "disabled" : ""} onclick="PartyGamesUI.switchQdMode('${table.id}','draw')">🔫 西部拔槍</button>
+                <button class="chip-btn active" ${!canSwitchMode ? "disabled" : ""} onclick="PartyGamesUI.switchQdMode('${table.id}','blind10')">⏱️ 盲按 10.000s</button>
               </div>
-              <span class="gold-text" style="font-size:12.5px;">🏆 獨得獎池：${potPreview}</span>
+              <span class="gold-text" style="font-size:12.5px;">🏆 獨得獎金：${potPreview}</span>
             </div>
-            <p class="muted-sm" style="margin:6px 0 10px;">各自按下開始計時，滿 3.000 秒後碼表自動蓋牌，全場最接近 <b>10.000 秒</b> 者獨吞獎池！（已完成 ${doneCnt}/${parts.length} 人）</p>
+            <p class="muted-sm" style="margin:6px 0 10px;">各自按下開始計時，滿 3.000 秒後碼表自動蓋牌，最接近 <b>10.000 秒</b> 者獨得獎金！（已完成 ${doneCnt}/${parts.length} 人）</p>
             ${
               amIn && myVal === undefined
                 ? !localStart
@@ -847,6 +881,8 @@
                   const txt =
                     v === undefined
                       ? "⏳ 挑戰中…"
+                      : v < 0
+                      ? "<span class='muted-xs'>🏳️ 棄權</span>"
                       : allDone || p.id === me.id
                       ? `<b class="gold-text">${(v / 1000).toFixed(3)}s</b> <small class="muted-xs">(差 ${(Math.abs(v - 10000) / 1000).toFixed(3)}s)</small>`
                       : "🔒 已拍停鎖定（等全員按完揭曉）";
@@ -857,7 +893,7 @@
             ${
               isHost && doneCnt >= 1 && !allDone
                 ? `<button class="btn btn-secondary btn-xs" style="width:100%;margin-top:8px;" onclick="PartyGamesUI.qdForceSettle('${table.id}')">
-                    🏁 有人離席未按？點此截止並立即開獎結算
+                    🏁 有人離席未按？截止並開獎結算
                   </button>`
                 : ""
             }
@@ -935,7 +971,7 @@
                     .join("")}
                 </div>
                 <div class="muted-xs" style="text-align:center;margin-top:6px;">
-                  ${myMove ? "✅ 已暗中出拳，等待對手出拳同步開牌…" : "請在手機上選擇這回合要出的拳，雙方選完自動開牌（搶 3 勝自動派彩）！"}
+                  ${myMove ? "✅ 已暗中出拳，等待對手出拳同步開牌…" : "請在手機上選擇這回合要出的拳，雙方選完自動開牌（搶 3 勝自動發獎金）！"}
                 </div>`
               : ""
           }
@@ -1136,11 +1172,11 @@
         return `
           <div class="settle-confirm-box">
             <div>⚖️ 待確認賽果：贏家為 <b class="gold-text">${esc(names)}</b></div>
-            <div class="muted-xs" style="margin:4px 0 8px;">需另一位參賽選手按下確認，即刻自動派彩結算！</div>
+            <div class="muted-xs" style="margin:4px 0 8px;">需另一位參賽選手按下確認，即自動發放獎金！</div>
             <div class="host-row">
               ${
                 !alreadyConfirmed
-                  ? `<button class="btn btn-emerald" onclick="PartyGamesUI.confirmWinner('${table.id}')">✅ 確認無誤・立即派彩</button>`
+                  ? `<button class="btn btn-emerald" onclick="PartyGamesUI.confirmWinner('${table.id}')">✅ 確認無誤・發放獎金</button>`
                   : `<span class="muted-sm">⏳ 已送出，等待對手按確認…</span>`
               }
               <button class="btn btn-ghost btn-sm" onclick="PartyGamesUI.resetProposal('${table.id}')">重選贏家</button>
@@ -1153,9 +1189,10 @@
       if (table.game_type !== "switch_free") return "";
       return `
         <details class="manual-settle-details" open>
-          <summary>🏆 Switch 比賽結束：點選本局第 1 名贏家（對手確認即派彩）</summary>
+          <summary>🏆 Switch 比賽結束：點選本局第 1 名贏家（對手確認即發獎金）</summary>
           <div class="bet-btn-grid" style="margin-top:8px;">
             ${table.participants
+              .filter((p) => !p.forfeited)
               .map(
                 (p) => `<button class="btn btn-secondary btn-sm" onclick="PartyGamesUI.proposeWinner('${table.id}', ['${p.id}'])">
                   🏆 ${esc(p.name)} 獲勝
@@ -1173,7 +1210,7 @@
       const existingActive = this.getMyActiveTable(ctx.me?.id, ctx.tables);
       if (existingActive) {
         window.PartyApp.toast(
-          `⚔️ 你目前已在【${existingActive.title}】房間內，一次只能參加一個遊戲喔！`
+          `⚔️ 你已在【${existingActive.title}】房間內，一次限參加 1 場遊戲喔！`
         );
         this.openRoomWindow(existingActive.id);
         return;
@@ -1183,7 +1220,7 @@
       this.forceModalTestOnly = Boolean(forceTestOnly);
       if (this.forceModalTestOnly) {
         const firstUntested = CFG.PARTY_GAMES.find(
-          (gm) => window.PartyEngine.getTestHostUsage(ctx.me.id, gm.id, ctx.tables) < 1
+          (gm) => window.PartyEngine.getTestHostUsage(ctx.me.id, gm.id, ctx.tables, ctx.me) < 1
         );
         if (firstUntested) this.activeModalGame = firstUntested.id;
         this.activeModalTestMode = true;
@@ -1192,7 +1229,8 @@
         const testUsed = window.PartyEngine.getTestHostUsage(
           ctx.me.id,
           this.activeModalGame,
-          ctx.tables
+          ctx.tables,
+          ctx.me
         );
         if (testUsed >= 1) this.activeModalTestMode = false;
       }
@@ -1203,7 +1241,7 @@
     selectModalGame(gameId) {
       this.activeModalGame = gameId;
       const ctx = window.PartyApp.getContext();
-      const testUsed = window.PartyEngine.getTestHostUsage(ctx.me.id, gameId, ctx.tables);
+      const testUsed = window.PartyEngine.getTestHostUsage(ctx.me.id, gameId, ctx.tables, ctx.me);
       if (this.forceModalTestOnly) {
         this.activeModalTestMode = true;
       } else if (testUsed >= 1) {
@@ -1235,14 +1273,15 @@
       const selTestUsed = window.PartyEngine.getTestHostUsage(
         ctx.me.id,
         selectedMeta.id,
-        ctx.tables
+        ctx.tables,
+        ctx.me
       );
       const isTestMode = this.forceModalTestOnly || (this.activeModalTestMode && selTestUsed < 1);
       const testQuotaExhausted = this.forceModalTestOnly && selTestUsed >= 1;
 
       box.innerHTML = `
         <div class="modal-head">
-          <h3>${this.forceModalTestOnly ? "🧪 開啟新手不計分測試局" : "➕ 建立 Party Game 賽桌"}</h3>
+          <h3>${this.forceModalTestOnly ? "🧪 開啟新手免費測試局" : "➕ 建立 Party Game 賽桌"}</h3>
           <button class="btn-close" onclick="PartyGamesUI.closeModal()">✕</button>
         </div>
         <div class="sub-label">1. 選擇要玩的遊戲：</div>
@@ -1255,7 +1294,7 @@
               ctx.tables,
               ctx.bets
             );
-            const tUsed = window.PartyEngine.getTestHostUsage(ctx.me.id, gm.id, ctx.tables);
+            const tUsed = window.PartyEngine.getTestHostUsage(ctx.me.id, gm.id, ctx.tables, ctx.me);
             const isScoring = u.playCount < g.maxScoringPlaysPerGamePerDay;
             return `
               <div class="create-game-item ${this.activeModalGame === gm.id ? "active" : ""}"
@@ -1263,9 +1302,13 @@
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
                   <b>${gm.icon} ${esc(gm.name)}</b>
                   <div style="display:flex;gap:4px;">
-                    <span class="q-tag ${tUsed < 1 ? "q-ok" : "q-muted"}">
-                      ${tUsed < 1 ? "🧪 可免費試玩 1次" : "🧪 已試玩"}
-                    </span>
+                    ${
+                      tUsed < 1
+                        ? `<span class="q-tag q-ok">🧪 測試 0/1</span>`
+                        : this.forceModalTestOnly
+                        ? `<span class="q-tag q-muted">✅ 已完成試玩</span>`
+                        : ""
+                    }
                     ${
                       !this.forceModalTestOnly
                         ? `<span class="q-tag ${isScoring ? "q-bet" : "q-muted"}">
@@ -1287,11 +1330,11 @@
 
         ${
           !this.forceModalTestOnly && selTestUsed < 1
-            ? `<div class="sub-label" style="margin-top:10px;">2. 選擇本局計分模式（每款遊戲有 1 次新手免費測試機會）：</div>
+            ? `<div class="sub-label" style="margin-top:10px;">2. 選擇模式（此款剩 1 次免費測試機會）：</div>
                <div class="grid-2-btns">
                  <button class="btn ${isTestMode ? "btn-primary" : "btn-secondary"} btn-sm"
                    onclick="PartyGamesUI.activeModalTestMode=true;PartyGamesUI.renderCreateModalInner();">
-                   🧪 新手測試局 (0分｜剩1次)
+                   🧪 免費測試局 (0分)
                  </button>
                  <button class="btn ${!isTestMode ? "btn-gold" : "btn-secondary"} btn-sm"
                    onclick="PartyGamesUI.activeModalTestMode=false;PartyGamesUI.renderCreateModalInner();">
@@ -1301,7 +1344,7 @@
             : ""
         }
 
-        <div class="sub-label" style="margin-top:12px;">${!this.forceModalTestOnly && selTestUsed < 1 ? "3." : "2."} 推播揪團集結倒數時間（1～3 分鐘）：</div>
+        <div class="sub-label" style="margin-top:12px;">${!this.forceModalTestOnly && selTestUsed < 1 ? "3." : "2."} 集結倒數時間（1～3 分鐘）：</div>
         <div class="countdown-selector">
           ${[1, 2, 3]
             .map(
@@ -1314,14 +1357,14 @@
         </div>
 
         <div style="margin-top:12px;">
-          <input type="text" id="custom-table-note" class="input-dark" placeholder="選填備註（例如：瑪利歐賽車彩虹賽道 4人局！）">
+          <input type="text" id="custom-table-note" class="input-dark" placeholder="選填備註（例：瑪利歐賽車彩虹賽道）">
         </div>
 
         ${
           testQuotaExhausted
-            ? `<div class="locked-bet-msg" style="margin-top:12px;text-align:center;">✅ 你已經體驗過【${esc(selectedMeta.name)}】的 1 次免費測試局囉！請點上方選擇其他尚未試玩的遊戲。</div>`
+            ? `<div class="locked-bet-msg" style="margin-top:12px;text-align:center;">✅ 你已體驗過【${esc(selectedMeta.name)}】的 1 次免費測試局囉！請點上方選擇其他尚未試玩的遊戲。</div>`
             : `<button class="btn ${isTestMode ? "btn-primary" : "btn-gold"}" style="width:100%;margin-top:14px;" onclick="PartyGamesUI.confirmCreateTable()">
-                 ${isTestMode ? "🧪 開啟不計分測試局（可揪朋友或補 AI 陪練員）" : "📢 開桌並推播通知全場！"}
+                 ${isTestMode ? "🧪 開啟免費測試局（可揪人或補 AI 陪練）" : "📢 開桌並推播通知全場！"}
                </button>`
         }
       `;
@@ -1341,7 +1384,7 @@
         if (existingActive) {
           this.closeModal();
           window.PartyApp.toast(
-            `⚔️ 你目前已在【${existingActive.title}】房間內，一次只能參加一個遊戲喔！`
+            `⚔️ 你已在【${existingActive.title}】房間內，一次限參加 1 場遊戲喔！`
           );
           this.openRoomWindow(existingActive.id);
           return;
@@ -1349,10 +1392,10 @@
         const g = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}) };
         const dayKey = g.activeDayKey || "2026-12-31";
         const gm = CFG.PARTY_GAMES.find((x) => x.id === this.activeModalGame) || CFG.PARTY_GAMES[0];
-        const testUsed = window.PartyEngine.getTestHostUsage(ctx.me.id, gm.id, ctx.tables);
+        const testUsed = window.PartyEngine.getTestHostUsage(ctx.me.id, gm.id, ctx.tables, ctx.me);
         const isTestRun = Boolean(this.forceModalTestOnly || (this.activeModalTestMode && testUsed < 1));
         if (this.forceModalTestOnly && testUsed >= 1) {
-          window.PartyApp.toast(`【${gm.name}】的新手免費測試局（1 次）已使用過囉！`);
+          window.PartyApp.toast(`【${gm.name}】的 1 次免費測試機會已使用過囉！`);
           return;
         }
 
@@ -1522,6 +1565,18 @@
             abortReason = "full";
             return undefined;
           }
+          if (cur.is_test_run) {
+            const myTestUsed = window.PartyEngine.getTestHostUsage(
+              ctx.me.id,
+              cur.game_type,
+              ctx.tables,
+              ctx.me
+            );
+            if (myTestUsed >= 1) {
+              abortReason = `test_used:${gameMeta.name}`;
+              return undefined;
+            }
+          }
           const usage = window.PartyEngine.getDailyGameUsage(
             ctx.me.id,
             cur.game_type,
@@ -1556,6 +1611,9 @@
             window.PartyApp.toast(`此賽桌已滿員（最多 ${maxP} 人）囉！`);
           } else if (abortReason === "closed") {
             window.PartyApp.toast("此賽桌已經開戰或關閉囉！");
+          } else if (abortReason.startsWith("test_used:")) {
+            const gmName = abortReason.split(":")[1] || "本遊戲";
+            window.PartyApp.toast(`🧪 你已使用過【${gmName}】的 1 次免費測試機會，請參加正式賽桌！`);
           } else if (abortReason.startsWith("low_pt:")) {
             const req = abortReason.split(":")[1];
             window.PartyApp.toast(
@@ -1617,30 +1675,40 @@
       const ctx = window.PartyApp.getContext();
       const table = (ctx.tables || []).find((t) => t.id === tableId);
       if (!table || table.status !== "open") return;
-      // 退還已下注觀眾的注碼並刪除下注紀錄（不佔用每日 3 次下注額度！）
+      // 清除已下注觀眾的下注與預扣帳目（不佔用每日 3 次下注額度！）
       const tableBets = (ctx.bets || []).filter((b) => b.table_id === tableId);
       for (const b of tableBets) {
-        await window.PartyDB.upsert(
-          "ledger",
-          [
-            {
-              id: `cancel_bet_refund_${b.id}`,
-              player_id: b.bettor_id,
-              delta: Number(b.amount) || 10,
-              category: "bet_refund",
-              reason: `↩️ 賽桌取消退回下注【${table.title}】`,
-              day_key: table.day_key,
-              meta: { tableId },
-            },
-          ],
-          { ignoreDuplicates: true }
-        );
+        await window.PartyDB.remove("ledger", `id=eq.${encodeURIComponent(`stake_${b.id}`)}`);
         await window.PartyDB.remove("bets", `id=eq.${encodeURIComponent(b.id)}`);
       }
       await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(tableId)}`, {
         status: "cancelled",
       });
       await window.PartyApp.refreshAll();
+    },
+
+    async cancelMyBet(tableId) {
+      return window.PartyDB.withLock(`cancel_bet_${tableId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        if (!ctx.me) return;
+        const freshRows = await window.PartyDB.select(
+          "tables",
+          `id=eq.${encodeURIComponent(tableId)}`,
+          { forceNetwork: true }
+        );
+        const liveTable = (freshRows && freshRows[0]) || (ctx.tables || []).find((t) => t.id === tableId);
+        if (!liveTable || liveTable.status !== "open") {
+          window.PartyApp.toast("⚠️ 賽局已經開戰，無法反悔退注囉！");
+          await window.PartyApp.refreshAll();
+          return;
+        }
+        const betId = `bet_${tableId}_${ctx.me.id}`;
+        await window.PartyDB.remove("bets", `id=eq.${encodeURIComponent(betId)}`);
+        await window.PartyDB.remove("ledger", `id=eq.${encodeURIComponent(`stake_${betId}`)}`);
+        window.PartyFX.haptic("medium");
+        window.PartyApp.toast(`↩️ 已撤回下注並退回 ${Number(liveTable.bet_stake) || 10} PT（不扣今日下注額度）！`);
+        await window.PartyApp.refreshAll();
+      });
     },
 
     async placeBet(tableId, pickKey, pickLabel) {
@@ -1803,25 +1871,38 @@
         }
 
         const startedTbl = tx.snapshot;
-        // 扣除計分參賽者的入場費（冪等鍵防重複扣款，純陪玩第4次+玩家不扣分！）
-        for (const p of startedTbl.participants || []) {
-          if (p.isScoring) {
-            await window.PartyDB.upsert(
-              "ledger",
-              [
-                {
-                  id: `play_stake_${startedTbl.id}_${p.id}`,
-                  player_id: p.id,
-                  delta: -(Number(startedTbl.stake) || 20),
-                  category: "party_stake",
-                  reason: `⚔️ 參賽入場費【${startedTbl.title}】`,
-                  day_key: startedTbl.day_key,
-                  meta: { tableId: startedTbl.id, gameType: startedTbl.game_type },
-                },
-              ],
-              { ignoreDuplicates: true }
-            );
-          }
+        // 🧪 測試局：開戰即永久扣除所有真人參與者（房主＋加入者）本款遊戲的 1 次免費試玩機會（跨日不重置）
+        if (startedTbl.is_test_run) {
+          const humanIds = (startedTbl.participants || [])
+            .filter((p) => !String(p.id).startsWith("bot_"))
+            .map((p) => p.id);
+          await Promise.all(
+            humanIds.map((pid) =>
+              window.PartyDB.transactRow("players", pid, (cur) => {
+                if (!cur) return undefined;
+                const list = Array.isArray(cur.tested_games) ? [...cur.tested_games] : [];
+                if (list.includes(startedTbl.game_type)) return undefined;
+                list.push(startedTbl.game_type);
+                cur.tested_games = list;
+                return cur;
+              }).catch(() => null)
+            )
+          );
+        }
+        // 扣除計分參賽者的入場費（單次批次寫入，冪等鍵防重複扣款；陪玩者不扣分！）
+        const stakeRows = (startedTbl.participants || [])
+          .filter((p) => p.isScoring)
+          .map((p) => ({
+            id: `play_stake_${startedTbl.id}_${p.id}`,
+            player_id: p.id,
+            delta: -(Number(startedTbl.stake) || 20),
+            category: "party_stake",
+            reason: `⚔️ 參賽入場費【${startedTbl.title}】`,
+            day_key: startedTbl.day_key,
+            meta: { tableId: startedTbl.id, gameType: startedTbl.game_type },
+          }));
+        if (stakeRows.length > 0) {
+          await window.PartyDB.upsert("ledger", stakeRows, { ignoreDuplicates: true });
         }
 
         window.PartyFX.playTone("bell");
@@ -1835,86 +1916,61 @@
       const table = (ctx.tables || []).find((t) => t.id === tableId);
       if (!table || table.host_id !== ctx.me.id) return;
       delete this.blindStopwatchStart[tableId];
+      this.clearLocalDraw(tableId);
       const nextRoundSeq = ((table.game_state && table.game_state.roundSeq) || 1) + 1;
-      const ready = {};
-      (table.participants || []).forEach((p) => {
-        if (String(p.id).startsWith("bot_")) ready[p.id] = true;
-      });
       await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(tableId)}`, {
-        game_state: { mode, roundSeq: nextRoundSeq, ready, times: {}, fireAt: 0 },
+        game_state: { mode, roundSeq: nextRoundSeq, ready: {}, times: {}, fireAt: 0 },
       });
       await window.PartyApp.refreshAll();
     },
 
-    async qdReady(tableId) {
+    clearLocalDraw(tableId) {
+      const st = this.localDrawState[tableId];
+      if (st && st.timer) clearTimeout(st.timer);
+      delete this.localDrawState[tableId];
+    },
+
+    // 🔫 公平版西部拔槍：每支手機「本地獨立」隨機倒數，於本機螢幕真正變紅那一幀開始計時，只上傳純反應毫秒數！
+    qdStartLocalDraw(tableId) {
       const ctx = window.PartyApp.getContext();
       const table = (ctx.tables || []).find((t) => t.id === tableId);
       if (!table || table.status !== "playing") return;
-      const gs = { ...(table.game_state || {}) };
-      const mode = gs.mode || "draw";
-      const roundSeq = gs.roundSeq || 1;
-      const rKey = `qd_ready_${mode}_${roundSeq}`;
-
-      // 寫入獨立 row 確保 16 人同時按準備絕不互相覆蓋！
-      await window.PartyDB.upsert("theme_responses", [
-        {
-          id: `${tableId}_${rKey}_${ctx.me.id}`,
-          session_id: tableId,
-          step_key: rKey,
-          player_id: ctx.me.id,
-          payload: { ready: true },
-        },
-      ]);
-
-      const freshResps = await window.PartyDB.select(
-        "theme_responses",
-        `session_id=eq.${encodeURIComponent(tableId)}&step_key=eq.${encodeURIComponent(rKey)}`
-      );
-      const mergedReady = { ...(gs.ready || {}), [ctx.me.id]: true };
-      (freshResps || []).forEach((r) => (mergedReady[r.player_id] = true));
-
-      const allReady = (table.participants || []).every((p) => mergedReady[p.id]);
-      if (allReady && !gs.fireAt) {
-        gs.ready = mergedReady;
-        gs.fireAt = window.PartyDB.serverNowMs + 2500 + Math.floor(Math.random() * 2800);
-        gs.times = {};
-        await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(tableId)}`, {
-          game_state: gs,
+      const roundSeq = (table.game_state && table.game_state.roundSeq) || 1;
+      this.clearLocalDraw(tableId);
+      window.PartyFX.unlockAudio();
+      const delay = 2400 + Math.floor(Math.random() * 2600);
+      const st = { roundSeq, phase: "armed", firedAt: 0, timer: null };
+      st.timer = setTimeout(() => {
+        const cur = this.localDrawState[tableId];
+        if (!cur || cur.phase !== "armed") return;
+        cur.phase = "fired";
+        window.PartyApp.render();
+        requestAnimationFrame(() => {
+          const c2 = this.localDrawState[tableId];
+          if (c2 && c2.phase === "fired" && !c2.firedAt) c2.firedAt = performance.now();
         });
-      }
-      await window.PartyApp.refreshAll();
-    },
-
-    async resolveAndFinishQd(table, mode, mergedTimes, ctx) {
-      const parts = table.participants || [];
-      let winnerIds = [];
-      if (mode === "draw") {
-        const valid = parts.filter((p) => mergedTimes[p.id] !== undefined && mergedTimes[p.id] >= 0);
-        if (valid.length === 0) {
-          // 若是 2 人局其中 1 人偷跑、另 1 人尚未按，則未偷跑者直接獲勝；若全員皆偷跑則平手退費
-          const notFalse = parts.filter((p) => mergedTimes[p.id] === undefined);
-          winnerIds = notFalse.length === 1 ? [notFalse[0].id] : ["__pvp_tie__"];
-        } else {
-          valid.sort((a, b) => mergedTimes[a.id] - mergedTimes[b.id]);
-          winnerIds = [valid[0].id];
-        }
-      } else {
-        const valid = parts.filter((p) => mergedTimes[p.id] !== undefined);
-        if (valid.length === 0) return;
-        valid.sort(
-          (a, b) => Math.abs(mergedTimes[a.id] - 10000) - Math.abs(mergedTimes[b.id] - 10000)
-        );
-        winnerIds = [valid[0].id];
-      }
-      const nextGs = { ...(table.game_state || {}), times: mergedTimes };
-      const updatedTable = { ...table, game_state: nextGs };
-      await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(table.id)}`, {
-        game_state: nextGs,
-      });
-      await this.autoFinishTable(updatedTable, winnerIds, ctx);
+        window.PartyFX.playTone("fire");
+        window.PartyFX.haptic("heavy");
+      }, delay);
+      this.localDrawState[tableId] = st;
+      window.PartyApp.render();
     },
 
     async qdTap(tableId) {
+      const st = this.localDrawState[tableId];
+      if (!st) return;
+      const tapNow = performance.now();
+      let myMs;
+      if (st.phase === "armed") {
+        myMs = -1;
+      } else if (st.phase === "fired") {
+        myMs = Math.max(1, Math.round(tapNow - (st.firedAt || tapNow)));
+      } else {
+        return;
+      }
+      this.clearLocalDraw(tableId);
+      window.PartyFX.haptic("heavy");
+
       const ctx = window.PartyApp.getContext();
       const table = (ctx.tables || []).find((t) => t.id === tableId);
       if (!table || table.status !== "playing") return;
@@ -1925,12 +1981,7 @@
         ctx.themeResponses
       );
       if (curTimes[ctx.me.id] !== undefined) return;
-
-      const now = window.PartyDB.serverNowMs;
-      const diff = now - (gs.fireAt || 0);
-      const myMs = diff < 0 ? -1 : diff;
       const tKey = `qd_time_${mode}_${roundSeq}`;
-      window.PartyFX.haptic("heavy");
 
       const rowsToUpsert = [
         {
@@ -1948,7 +1999,7 @@
             session_id: tableId,
             step_key: tKey,
             player_id: p.id,
-            payload: { ms: 340 + Math.floor(Math.random() * 240) },
+            payload: { ms: 280 + Math.floor(Math.random() * 260) },
           });
         }
       });
@@ -1956,25 +2007,49 @@
 
       const freshResps = await window.PartyDB.select(
         "theme_responses",
-        `session_id=eq.${encodeURIComponent(tableId)}&step_key=eq.${encodeURIComponent(tKey)}`
+        `session_id=eq.${encodeURIComponent(tableId)}&step_key=eq.${encodeURIComponent(tKey)}`,
+        { forceNetwork: true }
       );
       const mergedTimes = { ...(gs.times || {}) };
       (freshResps || []).forEach((r) => {
         if (r.payload && r.payload.ms !== undefined) mergedTimes[r.player_id] = Number(r.payload.ms);
       });
 
-      const parts = table.participants || [];
-      const nonFalseRemaining = parts.filter(
-        (p) => mergedTimes[p.id] === undefined || mergedTimes[p.id] >= 0
-      );
-      const allTapped = parts.every((p) => mergedTimes[p.id] !== undefined);
-
-      // 若全員皆已按下，或多人偷跑導致全場只剩唯一 1 位未犯規選手（例如 1v1 對手偷跑），立即判勝！
-      if (allTapped || (myMs < 0 && nonFalseRemaining.length === 1)) {
+      const activeParts = (table.participants || []).filter((p) => !p.forfeited);
+      const allTapped = activeParts.every((p) => mergedTimes[p.id] !== undefined);
+      if (allTapped) {
         await this.resolveAndFinishQd(table, "draw", mergedTimes, ctx);
       } else {
         await window.PartyApp.refreshAll();
       }
+    },
+
+    async resolveAndFinishQd(table, mode, mergedTimes, ctx) {
+      const parts = (table.participants || []).filter((p) => !p.forfeited);
+      let winnerIds = [];
+      if (mode === "draw") {
+        const valid = parts.filter((p) => mergedTimes[p.id] !== undefined && mergedTimes[p.id] >= 0);
+        if (valid.length === 0) {
+          const notFalse = parts.filter((p) => mergedTimes[p.id] === undefined);
+          winnerIds = notFalse.length === 1 ? [notFalse[0].id] : ["__pvp_tie__"];
+        } else {
+          valid.sort((a, b) => mergedTimes[a.id] - mergedTimes[b.id]);
+          winnerIds = [valid[0].id];
+        }
+      } else {
+        const valid = parts.filter((p) => mergedTimes[p.id] !== undefined && mergedTimes[p.id] >= 0);
+        if (valid.length === 0) return;
+        valid.sort(
+          (a, b) => Math.abs(mergedTimes[a.id] - 10000) - Math.abs(mergedTimes[b.id] - 10000)
+        );
+        winnerIds = [valid[0].id];
+      }
+      const nextGs = { ...(table.game_state || {}), times: mergedTimes };
+      const updatedTable = { ...table, game_state: nextGs };
+      await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(table.id)}`, {
+        game_state: nextGs,
+      });
+      await this.autoFinishTable(updatedTable, winnerIds, ctx);
     },
 
     startBlind10(tableId) {
@@ -2043,7 +2118,9 @@
         if (r.payload && r.payload.ms !== undefined) mergedTimes[r.player_id] = Number(r.payload.ms);
       });
 
-      const allDone = (table.participants || []).every((p) => mergedTimes[p.id] !== undefined);
+      const allDone = (table.participants || [])
+        .filter((p) => !p.forfeited)
+        .every((p) => mergedTimes[p.id] !== undefined);
       if (allDone) {
         await this.resolveAndFinishQd(table, "blind10", mergedTimes, ctx);
       } else {
@@ -2085,8 +2162,9 @@
           : gs.secret;
 
       if (val === secret) {
-        window.PartyFX.playTone("fire");
+        window.PartyFX.playTone("thunder");
         window.PartyFX.haptic("heavy");
+        gs.lastBoom = { id: ctx.me.id, seq: Date.now(), val };
         const remaining = (gs.aliveIds || []).filter((id) => id !== ctx.me.id);
         if (remaining.length <= 1) {
           gs.aliveIds = remaining;
@@ -2207,6 +2285,7 @@
         const icon = { rock: "✊", scissors: "✌️", paper: "🖐️" };
         if (m1 === m2) {
           gs.lastRoundMsg = `${p1.name} ${icon[m1]} vs ${icon[m2]} ${p2.name} ➜ 平手再來！`;
+          gs.lastRound = { seq: roundSeq, winnerId: "", msg: gs.lastRoundMsg };
         } else if (
           (m1 === "rock" && m2 === "scissors") ||
           (m1 === "scissors" && m2 === "paper") ||
@@ -2214,9 +2293,11 @@
         ) {
           gs.wins[p1.id] = (gs.wins[p1.id] || 0) + 1;
           gs.lastRoundMsg = `${p1.name} ${icon[m1]} 贏了 ${p2.name} ${icon[m2]}！`;
+          gs.lastRound = { seq: roundSeq, winnerId: p1.id, msg: gs.lastRoundMsg };
         } else {
           gs.wins[p2.id] = (gs.wins[p2.id] || 0) + 1;
           gs.lastRoundMsg = `${p2.name} ${icon[m2]} 贏了 ${p1.name} ${icon[m1]}！`;
+          gs.lastRound = { seq: roundSeq, winnerId: p2.id, msg: gs.lastRoundMsg };
         }
         gs.moves = {};
         gs.roundSeq = roundSeq + 1;
@@ -2286,12 +2367,11 @@
         gs.scores = { ...(gs.scores || { team_A: 0, team_B: 0 }) };
         const teamA = table.participants.filter((p) => p.team === "team_A");
         const teamB = table.participants.filter((p) => p.team === "team_B");
-        if (teamA.length === 2 && curAnswers[teamA[0].id] === curAnswers[teamA[1].id]) {
-          gs.scores.team_A += 1;
-        }
-        if (teamB.length === 2 && curAnswers[teamB[0].id] === curAnswers[teamB[1].id]) {
-          gs.scores.team_B += 1;
-        }
+        const hitA = teamA.length === 2 && curAnswers[teamA[0].id] === curAnswers[teamA[1].id];
+        const hitB = teamB.length === 2 && curAnswers[teamB[0].id] === curAnswers[teamB[1].id];
+        if (hitA) gs.scores.team_A += 1;
+        if (hitB) gs.scores.team_B += 1;
+        gs.lastQResult = { qIdx, hitA, hitB };
 
         if (qIdx + 1 >= (gs.questions || []).length) {
           // 自動檢查【靈魂雙胞胎 +40 PT】里程碑徽章 (排除新手免費測試局！)
@@ -2407,25 +2487,28 @@
       const curPlayer = parts[(gs.turn || 0) % parts.length];
       gs.scores = { ...(gs.scores || {}) };
       if (passed) gs.scores[curPlayer.id] = (gs.scores[curPlayer.id] || 0) + 1;
+      gs.lastJudge = { turn: gs.turn || 0, playerId: curPlayer.id, passed: Boolean(passed) };
       gs.turn = (gs.turn || 0) + 1;
       gs.turnStartedAt = 0;
 
       while (
         gs.turn < parts.length * 3 &&
-        String(parts[gs.turn % parts.length].id).startsWith("bot_")
+        (String(parts[gs.turn % parts.length].id).startsWith("bot_") ||
+          parts[gs.turn % parts.length].forfeited)
       ) {
         const bp = parts[gs.turn % parts.length];
-        if (Math.random() < 0.65) gs.scores[bp.id] = (gs.scores[bp.id] || 0) + 1;
+        if (!bp.forfeited && Math.random() < 0.65) gs.scores[bp.id] = (gs.scores[bp.id] || 0) + 1;
         gs.turn += 1;
       }
 
       if (gs.turn >= parts.length * 3) {
+        const activeParts = parts.filter((p) => !p.forfeited);
         let best = -1;
-        parts.forEach((p) => {
+        activeParts.forEach((p) => {
           const s = gs.scores[p.id] || 0;
           if (s > best) best = s;
         });
-        const topPlayers = best > 0 ? parts.filter((p) => (gs.scores[p.id] || 0) === best).map((p) => p.id) : [];
+        const topPlayers = best > 0 ? activeParts.filter((p) => (gs.scores[p.id] || 0) === best).map((p) => p.id) : [];
         await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(tableId)}`, { game_state: gs });
         return await this.autoFinishTable(table, topPlayers, ctx);
       }
@@ -2498,6 +2581,113 @@
         ctx.globalCfg
       );
       await window.PartyApp.refreshAll();
+    },
+
+    // ==================== 🏳️ 棄權認輸（對方不出牌卡房時可自行離場） ====================
+    confirmForfeitTable(tableId) {
+      const ctx = window.PartyApp.getContext();
+      const table = (ctx.tables || []).find((t) => t.id === tableId);
+      if (!table) return;
+      const activeCnt = (table.participants || []).filter((p) => !p.forfeited).length;
+      const isCoop =
+        table.game_type === "ito_numbers" ||
+        (table.game_type === "soul_sync_2v2" && (table.participants || []).length <= 2);
+      const msg = table.is_test_run
+        ? "確定要結束這場免費測試局嗎？（0 分，不影響積分）"
+        : isCoop
+        ? "這是合作局，你棄權後本局將直接判定「挑戰失敗」，全隊入場費不退回。\n確定要棄權嗎？"
+        : activeCnt <= 2
+        ? "棄權後將直接判你落敗，對手立即獲勝並拿走獎金（你的入場費不退回）。\n確定要棄權認輸嗎？"
+        : "棄權後你會立即離開本局（入場費留在獎金內給其他選手爭奪）。\n確定要棄權認輸嗎？";
+      window.PartyApp.confirmModal("🏳️ 棄權認輸", msg, "🏳️ 確定棄權", () => this.forfeitTable(tableId), true);
+    },
+
+    async forfeitTable(tableId) {
+      return window.PartyDB.withLock(`forfeit_${tableId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        if (!ctx.me) return;
+        const myId = ctx.me.id;
+        let finishWinners = null;
+
+        const tx = await window.PartyDB.transactRow("tables", tableId, (cur) => {
+          if (!cur || (cur.status !== "playing" && cur.status !== "settling")) return undefined;
+          const parts = (cur.participants || []).map((p) =>
+            p.id === myId ? { ...p, forfeited: true } : p
+          );
+          if (!parts.some((p) => p.id === myId)) return undefined;
+          cur.participants = parts;
+          const remaining = parts.filter((p) => !p.forfeited);
+          const gs = { ...(cur.game_state || {}) };
+          gs.lastLog = `🏳️ ${ctx.me.name} 棄權離場`;
+
+          const isCoop =
+            cur.game_type === "ito_numbers" ||
+            (cur.game_type === "soul_sync_2v2" && parts.length <= 2);
+          if (isCoop) {
+            finishWinners = ["__coop_fail__"];
+          } else if (cur.game_type === "soul_sync_2v2") {
+            const myTeam = parts.find((p) => p.id === myId)?.team;
+            finishWinners = parts.filter((p) => p.team && p.team !== myTeam).map((p) => p.id);
+          } else if (remaining.length <= 1) {
+            finishWinners = remaining.length === 1 ? [remaining[0].id] : ["__pvp_tie__"];
+          } else if (cur.game_type === "number_bomb") {
+            const alive = (gs.aliveIds || []).filter((id) => id !== myId);
+            const curTurnId = (gs.aliveIds || [])[gs.turnIdx || 0];
+            gs.aliveIds = alive;
+            let nextIdx = alive.indexOf(curTurnId);
+            if (nextIdx < 0) nextIdx = (gs.turnIdx || 0) % Math.max(1, alive.length);
+            gs.turnIdx = nextIdx;
+            if (alive.length <= 1) finishWinners = alive.length ? alive : ["__pvp_tie__"];
+          } else if (cur.game_type === "five_seconds") {
+            const total = parts.length * 3;
+            let turn = gs.turn || 0;
+            while (turn < total && parts[turn % parts.length].forfeited) turn += 1;
+            gs.turn = turn;
+            gs.turnStartedAt = 0;
+            if (turn >= total) {
+              let best = -1;
+              remaining.forEach((p) => {
+                best = Math.max(best, (gs.scores || {})[p.id] || 0);
+              });
+              const top = best > 0 ? remaining.filter((p) => ((gs.scores || {})[p.id] || 0) === best).map((p) => p.id) : ["__pvp_tie__"];
+              finishWinners = top;
+            }
+          }
+          cur.game_state = gs;
+          if (cur.status === "settling") {
+            cur.status = "playing";
+            cur.proposed_winners = null;
+            cur.confirmed_by = [];
+          }
+          return cur;
+        });
+
+        if (!tx.committed || !tx.snapshot) {
+          await window.PartyApp.refreshAll();
+          return;
+        }
+        if (this.activeRoomTableId === tableId) this.activeRoomTableId = null;
+        this.clearLocalDraw(tableId);
+        delete this.blindStopwatchStart[tableId];
+        window.PartyFX.haptic("medium");
+
+        const snap = tx.snapshot;
+        if (!finishWinners && snap.game_type === "quick_draw") {
+          const { times } = this.getMergedQdState(snap, snap.game_state || {}, ctx.themeResponses);
+          const active = (snap.participants || []).filter((p) => !p.forfeited);
+          if (active.length > 0 && active.every((p) => times[p.id] !== undefined)) {
+            await this.resolveAndFinishQd(snap, (snap.game_state || {}).mode || "draw", times, ctx);
+            window.PartyApp.toast("🏳️ 你已棄權離場！");
+            return;
+          }
+        }
+        if (finishWinners) {
+          await this.autoFinishTable(snap, finishWinners, ctx);
+        } else {
+          await window.PartyApp.refreshAll();
+        }
+        window.PartyApp.toast("🏳️ 你已棄權離場，可以回大廳開新局囉！");
+      });
     },
   };
 

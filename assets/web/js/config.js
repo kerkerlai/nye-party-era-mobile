@@ -39,7 +39,8 @@ window.PARTY_CONFIG = {
     scheduleOffsetMinutes: 0, // 現場聚餐臨時順延排程分鐘數
     timeTravelOffsetMinutes: 0, // 彩排時光機快轉／倒退模擬時間分鐘數
     partyJoinPin: "1234", // 統一派對通行 PIN 碼（GM 後台可設定）
-    enforceDeviceLock: false, // false: Web 測試階段允許單機自由切帳號；true: 正式派對開啟「1角色綁定1手機」防雙機登入
+    enforceDeviceLock: true, // true: 預設開啟「1角色綁定1手機」防同名被別人重複登入；GM 後台可隨時切換或單筆解綁
+    deviceLockDefaultV2: true,
     initialPoints: 300,
     dailyFloorPoints: 300,
     partyPlayStake: 20,
@@ -91,7 +92,7 @@ window.PARTY_CONFIG = {
     { id: "s18", day: "1/3 (日)", start: "2027-01-03T09:30", end: "2027-01-03T11:30", scene: "viewer", themeType: "", title: "🏆 終局開牌頒獎典禮 (Viewer 結算)", desc: "全服鎖定，揭曉全員秘密大腿關係網、四大傳奇王冠徽章與總冠軍！" }
   ],
 
-  // Party Game 7 款精選賽桌定義（內建完整玩法規則與計分派彩說明）
+  // Party Game 7 款精選賽桌定義（內建完整玩法規則、獎金說明與獨立成就條件）
   PARTY_GAMES: [
     {
       id: "switch_free",
@@ -100,9 +101,10 @@ window.PARTY_CONFIG = {
       minPlayers: 2,
       maxPlayers: 8,
       betMode: "player",
-      desc: "不限遊戲（賽車／大亂鬥／派對），多人參賽但「唯一第 1 名贏家」獨得獎池！",
-      howToPlay: "桌長開桌時可備註要玩的 Switch 遊戲（如瑪利歐賽車、大亂鬥、派對小遊戲）。電視／主機實體比完一局後，由參賽者在手機點選「本局第 1 名贏家」，經另一位對手按確認即刻自動派彩！",
-      scoringRule: "每位計分選手入場押 20 PT 進獎池（如 4 人計分局總池 80 PT；🔥限時加成補貼 +50% 變 120 PT），由「唯一第 1 名贏家」獨得全部選手獎池！累積計分奪冠最多者，1/3 結算再獲【👑 Switch 大魔王 +80 PT】。"
+      desc: "不限遊戲（賽車／大亂鬥／派對），多人參賽由「本局第 1 名贏家」獨得全部獎金！",
+      howToPlay: "桌長開桌可備註要玩的 Switch 遊戲（如瑪利歐賽車、大亂鬥、派對小遊戲）。主機實體比完一局後，在手機點選「本局第 1 名贏家」，經對手按確認即自動派發獎金！",
+      scoringRule: "每位計分選手入場押 20 PT（如 4 人局總獎金 80 PT；🔥限時加成補貼 +50% 變 120 PT），由「本局唯一第 1 名贏家」獨得全部對戰獎金！",
+      achievementRule: "👑【Switch 大魔王 +80 PT】：不限一般或限時加成時段，活動期間「計分局」累積奪冠次數最高者（最高並列則同獲），於終局結算獲得！"
     },
     {
       id: "quick_draw",
@@ -111,9 +113,9 @@ window.PARTY_CONFIG = {
       minPlayers: 2,
       maxPlayers: 16,
       betMode: "player",
-      desc: "支援 2～16 人全場亂鬥！內建「西部拔槍反應」與「盲按 10.000 秒」，第 1 名獨吞全場總獎池！",
-      howToPlay: "支援 2～16 人同時在手機上對決！桌長可選 2 種模式：①【🔫 西部拔槍】全員準備後 2.5～5.5 秒內螢幕隨機變紅震動，最快按下者奪冠（變紅前偷跑直接淘汰！）；②【⏱️ 盲按 10.000 秒】滿 3 秒後碼表自動蓋牌，全部人按完後揭曉最接近 10.000 秒（毫秒誤差最小）的第 1 名！",
-      scoringRule: "每位計分選手入場押 20 PT，越多人玩獎金越肥（例如 8 人局總獎池 160 PT、14 人局 280 PT；🔥限時加成總池再 +50%），由全場最快／最準的「唯一第 1 名贏家」獨吞全部獎池！"
+      desc: "支援 2～16 人亂鬥！內建「西部拔槍反應」與「盲按 10.000 秒」，第 1 名獨得總獎金！",
+      howToPlay: "支援 2～16 人同時對決！桌長可選 2 種模式：①【🔫 西部拔槍】各自按下準備後，手機獨立隨機倒數變紅，測純反應毫秒數再統一比快慢（變紅前偷按淘汰）；②【⏱️ 盲按 10.000 秒】滿 3 秒自動蓋牌，全員按完比誰最接近 10.000 秒！",
+      scoringRule: "每位計分選手入場押 20 PT，越多人玩獎金越高（如 8 人局總獎金 160 PT；🔥限時加成總獎金再 +50%），由全場最快／最準的第 1 名獨得全部獎金！"
     },
     {
       id: "number_bomb",
@@ -122,9 +124,9 @@ window.PARTY_CONFIG = {
       minPlayers: 2,
       maxPlayers: 3,
       betMode: "player",
-      desc: "精選 2～3 人快節奏死鬥！密碼學真隨機藏雷 1～99，輪流縮範圍淘汰踩雷者，最後存活 1 人獨勝！",
-      howToPlay: "限 2～3 人參賽（人人輪得到不冷場）！系統以加密級真隨機從 1～99 抽出隱藏炸彈。依順序輪流輸入數字縮小安全範圍，喊中炸彈者當場淘汰！若 3 人局淘汰 1 人後會重抽全新 0～100 密碼進行最終 1v1 決戰！",
-      scoringRule: "每位計分選手押 20 PT（2人局總池 40 PT、3人局總池 60 PT；🔥限時加成再 +50%），由「最後唯一存活未踩雷者」獨得獎池！"
+      desc: "精選 2～3 人快節奏死鬥！真隨機藏雷 1～99，輪流縮範圍淘汰踩雷者，存活者獨得獎金！",
+      howToPlay: "限 2～3 人參賽！系統從 1～99 隨機抽出隱藏炸彈，依序輪流輸入數字縮小安全範圍，喊中炸彈當場淘汰！若 3 人局淘汰 1 人後將重抽新密碼進入 1v1 決戰！",
+      scoringRule: "每位計分選手押 20 PT（2人局總獎金 40 PT、3人局 60 PT；🔥限時加成再 +50%），由最後唯一存活者獨得全部獎金！"
     },
     {
       id: "rps_king",
@@ -133,9 +135,9 @@ window.PARTY_CONFIG = {
       minPlayers: 2,
       maxPlayers: 2,
       betMode: "player",
-      desc: "100% 純手機同步暗出拳！五戰三勝（搶 3 勝）系統全自動判勝負派彩！",
-      howToPlay: "五戰三勝制（先搶下 3 勝者贏）！每回合雙方在各自手機秘密點選「✊石頭／✌️剪刀／🖐️布」，等雙方都選好後系統自動同步開牌計分，平手重出，先累積滿 3 勝者獲勝！",
-      scoringRule: "雙方計分選手各押 20 PT（總獎池 40 PT＝贏家淨賺 +20 PT；🔥限時加成總獎池 60 PT＝贏家淨賺 +40 PT），搶滿 3 勝自動派彩！"
+      desc: "純手機同步暗出拳！五戰三勝（搶 3 勝），每拳即時開獎，系統全自動判勝負發獎金！",
+      howToPlay: "五戰三勝制（先搶 3 勝者贏）！每回合雙方在各自手機秘密點選「✊石頭／✌️剪刀／🖐️布」，雙方選好後同步開牌計分，平手重出，先滿 3 勝者獲勝！",
+      scoringRule: "雙方計分選手各押 20 PT（總獎金 40 PT＝贏家淨賺 +20 PT；🔥限時加成總獎金 60 PT＝贏家淨賺 +40 PT），搶滿 3 勝自動發放獎金！"
     },
     {
       id: "soul_sync_2v2",
@@ -144,9 +146,10 @@ window.PARTY_CONFIG = {
       minPlayers: 2,
       maxPlayers: 4,
       betMode: "team_or_coop",
-      desc: "100% 手機選擇題！支援「2人合作闖關」或「4人雙組 2v2 對抗」搶獎池！",
-      howToPlay: "系統連出 8 題四選一生活／喜好快問快答，禁止串供各自在手機秒選答案！同組搭檔在同一題選中「完全相同選項」即得 1 分默契分。支援「2 人合作闖關」或「4 人分 A/B 兩組對抗（開賽前點組別標籤可換隊友）」。",
-      scoringRule: "每位計分選手押 20 PT：①【2人合作】對 0～4 題失敗沒收本金；對 5～6 題過關退本金外每人淨賺 +20 PT；對 7～8 題大滿貫每人淨賺 +35 PT（🔥限時加成淨利再 +50%）。②【4人對抗】高分組平分總獎池（平手退回本金）。單局對滿 6 題再自動解鎖【💞 靈魂雙胞胎 +40 PT】！"
+      desc: "100% 手機選擇題！支援「2人合作闖關」或「4人雙組 2v2 對抗」贏取獎金！",
+      howToPlay: "連出 8 題四選一生活快問快答，禁止串供各自秒選！搭檔同題選中「相同選項」即得 1 分。支援「2 人合作闖關」或「4 人分 A/B 組對抗（開賽前點組別可換隊）」。",
+      scoringRule: "每位計分選手押 20 PT：①【2人合作】對 0～4 題失敗沒收本金；對 5～6 題每人淨賺 +20 PT；對 7～8 題每人淨賺 +35 PT（🔥限時加成淨利 +50%）。②【4人對抗】高分組平分總獎金（平手退回本金）。",
+      achievementRule: "💞【靈魂雙胞胎 +40 PT】：正式局單場 8 題中，同組搭檔默契命中達 6 題以上，雙人立即自動獲得！"
     },
     {
       id: "ito_numbers",
@@ -155,9 +158,9 @@ window.PARTY_CONFIG = {
       minPlayers: 3,
       maxPlayers: 8,
       betMode: "coop",
-      desc: "支援 3～8 人高難度合作！手機發 1～100 暗牌，口頭暗示由小排到大翻牌，人數越多獎金越狂！",
-      howToPlay: "3～8 人合作開局！每人手機抽一張 1～100 秘密數字卡（嚴禁說出數字），並抽出一道光譜主題（如 1 廢物～100 神器）。大家依自己數字大小口頭舉例暗示，討論後由桌長在手機把大家名字「由小排到大」排好並按下翻牌！",
-      scoringRule: "每位計分選手押 20 PT：翻牌數字「完全由小到大不逆序」即過關！退回本金外依人數發高額淨利：3人 +20、4人 +30、5人 +45、6人 +60、7人 +80、8人 +100 PT（🔥限時加成淨利再 +50%，8人高達 +150 PT！）；排錯逆序則沒收本金！"
+      desc: "支援 3～8 人合作！手機發 1～100 暗牌，口頭暗示由小排到大翻牌，越多人過關獎金越高！",
+      howToPlay: "3～8 人合作！每人抽一張 1～100 秘密數字卡（禁說數字），依主題口頭舉例暗示大小，討論後由桌長在手機把大家名字「由小排到大」排好並翻牌！",
+      scoringRule: "每位計分選手押 20 PT：翻牌數字「完全由小到大」即過關！退回本金外依人數發獎金：3人 +20、4人 +30、5人 +45、6人 +60、7人 +80、8人 +100 PT（🔥限時加成獎金再 +50%）；排錯沒收本金！"
     },
     {
       id: "five_seconds",
@@ -166,9 +169,9 @@ window.PARTY_CONFIG = {
       minPlayers: 2,
       maxPlayers: 4,
       betMode: "player",
-      desc: "手機抽題倒數 5.0 秒響鈴，面對面噴出 3 個答案由對手按過關，3 輪最高分獨得獎池！",
-      howToPlay: "每人輪流挑戰 3 輪！輪到你時按手機「翻開題目並啟動 5.0 秒倒數」（如：5 秒講出 3 種台灣泡麵），5 秒響鈴前大聲講滿 3 個合理答案，由對手在手機按「✅ 成功 (+1)」或「❌ 超時 (+0)」。",
-      scoringRule: "每位計分選手押 20 PT 進總獎池（🔥限時加成獎池 +50%），3 輪結束後由累積得分最高者獨得全部選手獎池！"
+      desc: "手機抽題倒數 5.0 秒響鈴，面對面噴出 3 個答案由對手按過關，3 輪最高分獨得獎金！",
+      howToPlay: "每人輪流挑戰 3 輪！輪到你時按「翻開題目並啟動 5.0 秒倒數」，響鈴前大聲講滿 3 個合理答案，由對手按「✅ 成功 (+1)」或「❌ 超時 (+0)」。",
+      scoringRule: "每位計分選手押 20 PT（🔥限時加成總獎金 +50%），3 輪結束後由累積最高分者獨得全部對戰獎金（最高分並列則平分）！"
     }
   ],
 
@@ -176,7 +179,7 @@ window.PARTY_CONFIG = {
   BADGE_CATALOG: [
     // 👑 結算唯一冠 (+80 PT，終局結算自動頒發)
     { code: "crown_social", tier: "crown", icon: "👑", name: "社交恐怖分子", points: 80, auto: true, desc: "活動期間與最多「不同朋友」同桌遊戲＋互動解任務第 1 名" },
-    { code: "crown_switch", tier: "crown", icon: "👑", name: "Switch 大魔王", points: 80, auto: true, desc: "Switch 自由賽桌累積計分奪冠第 1 名" },
+    { code: "crown_switch", tier: "crown", icon: "👑", name: "Switch 大魔王", points: 80, auto: true, desc: "Switch 計分局累積奪冠次數最高者（不限時段，並列同獲）" },
     { code: "crown_bettor", tier: "crown", icon: "👑", name: "地下賭聖", points: 80, auto: true, desc: "場邊下注命中率最高者" },
     { code: "crown_agent", tier: "crown", icon: "👑", name: "王牌特務", points: 80, auto: true, desc: "個人 Chill 隱藏任務累計完成數第 1 名" },
 
@@ -201,7 +204,7 @@ window.PARTY_CONFIG = {
     { code: "morning_bird", tier: "morning", icon: "🌅", name: "晨間陽光鳥", points: 30, auto: false, maxCount: 3, needWitness: 1, desc: "早上 06:30～09:00 在客廳早起並與 1 位早起夥伴互證（每日限1次）" }
   ],
 
-  // 100% 動態連動 GM 後台注碼與加成倍率之規則說明產生器（杜絕寫死 20 PT 掉棒！）
+  // 100% 動態連動 GM 後台注碼與加成倍率之規則說明產生器（獎金與專屬成就分行顯示！）
   getDynamicScoringRule(gameOrId, globalCfg) {
     const g = { ...this.DEFAULTS, ...(globalCfg || {}) };
     const id = typeof gameOrId === "string" ? gameOrId : gameOrId?.id;
@@ -212,23 +215,29 @@ window.PARTY_CONFIG = {
 
     switch (id) {
       case "switch_free":
-        return `每位計分選手入場押 ${s} PT 進獎池（如 4 人計分局總池 ${s * 4} PT；🔥限時加成補貼 +${hhPct}% 變 ${Math.round(s * 4 * hhMult)} PT），由「唯一第 1 名贏家」獨得全部選手獎池！累積計分奪冠最多者，終局結算再獲【👑 Switch 大魔王 +80 PT】。`;
+        return `每位計分選手入場押 ${s} PT（如 4 人局總獎金 ${s * 4} PT；🔥限時加成補貼 +${hhPct}% 變 ${Math.round(s * 4 * hhMult)} PT），由「本局唯一第 1 名贏家」獨得全部對戰獎金！`;
       case "quick_draw":
-        return `每位計分選手入場押 ${s} PT，越多人玩獎金越肥（例如 8 人局總獎池 ${s * 8} PT、14 人局 ${s * 14} PT；🔥限時加成總池再 +${hhPct}%），由全場最快／最準的「唯一第 1 名贏家」獨吞全部獎池！`;
+        return `每位計分選手入場押 ${s} PT，越多人玩獎金越高（如 8 人局總獎金 ${s * 8} PT、14 人局 ${s * 14} PT；🔥限時加成總獎金再 +${hhPct}%），由全場最快／最準的第 1 名獨得全部獎金！`;
       case "number_bomb":
-        return `每位計分選手押 ${s} PT（2人局總池 ${s * 2} PT、3人局總池 ${s * 3} PT；🔥限時加成再 +${hhPct}%），由「最後唯一存活未踩雷者」獨得獎池！`;
+        return `每位計分選手押 ${s} PT（2人局總獎金 ${s * 2} PT、3人局 ${s * 3} PT；🔥限時加成再 +${hhPct}%），由最後唯一存活者獨得全部獎金！`;
       case "rps_king": {
         const hhPot = Math.round(s * 2 * hhMult);
-        return `雙方計分選手各押 ${s} PT（總獎池 ${s * 2} PT＝贏家淨賺 +${s} PT；🔥限時加成總獎池 ${hhPot} PT＝贏家淨賺 +${hhPot - s} PT），搶滿 3 勝自動派彩！`;
+        return `雙方計分選手各押 ${s} PT（總獎金 ${s * 2} PT＝贏家淨賺 +${s} PT；🔥限時加成總獎金 ${hhPot} PT＝贏家淨賺 +${hhPot - s} PT），搶滿 3 勝自動發放獎金！`;
       }
       case "soul_sync_2v2":
-        return `每位計分選手押 ${s} PT：①【2人合作】對 0～4 題失敗沒收本金；對 5～6 題過關退本金外每人淨賺 +20 PT；對 7～8 題大滿貫每人淨賺 +35 PT（🔥限時加成淨利再 +${hhPct}%）。②【4人對抗】高分組平分總獎池（平手退回本金）。單局對滿 6 題再自動解鎖【💞 靈魂雙胞胎 +40 PT】！`;
+        return `每位計分選手押 ${s} PT：①【2人合作】對 0～4 題沒收本金；對 5～6 題退本金外每人淨賺 +20 PT；對 7～8 題每人淨賺 +35 PT（🔥限時加成獎金 +${hhPct}%）。②【4人對抗】高分組平分總獎金（平手退回本金）。`;
       case "ito_numbers":
-        return `每位計分選手押 ${s} PT：翻牌數字「完全由小到大不逆序」即過關！退回本金外依人數發高額淨利：3人 +20、4人 +30、5人 +45、6人 +60、7人 +80、8人 +100 PT（🔥限時加成淨利再 +${hhPct}%，8人高達 +${Math.round(100 * hhMult)} PT！）；排錯逆序則沒收本金！`;
+        return `每位計分選手押 ${s} PT：翻牌數字「完全由小到大」即過關！退回本金外依人數發獎金：3人 +20、4人 +30、5人 +45、6人 +60、7人 +80、8人 +100 PT（🔥限時加成獎金再 +${hhPct}%，8人高達 +${Math.round(100 * hhMult)} PT！）；排錯沒收本金！`;
       case "five_seconds":
-        return `每位計分選手押 ${s} PT 進總獎池（🔥限時加成獎池 +${hhPct}%），3 輪結束後由累積得分最高者獨得全部選手獎池！`;
+        return `每位計分選手押 ${s} PT（🔥限時加成總獎金 +${hhPct}%），3 輪結束後由累積得分最高者獨得全部對戰獎金（最高並列則平分）！`;
       default:
         return (typeof gameOrId === "object" && gameOrId?.scoringRule) || "";
     }
+  },
+
+  getDynamicAchievementRule(gameOrId) {
+    const id = typeof gameOrId === "string" ? gameOrId : gameOrId?.id;
+    const found = (this.PARTY_GAMES || []).find((x) => x.id === id);
+    return (found && found.achievementRule) || (typeof gameOrId === "object" && gameOrId?.achievementRule) || "";
   }
 };

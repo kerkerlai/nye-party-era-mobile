@@ -1,7 +1,7 @@
 name: nye_party_era
 description: "跨年英雄紀元 2026 ➜ 2027 — 純手機 App 內建遊戲引擎 + Firebase 即時同步"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+5
 
 environment:
   sdk: ^3.8.0

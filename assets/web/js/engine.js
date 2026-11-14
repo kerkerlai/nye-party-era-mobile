@@ -455,13 +455,20 @@
   }
 
   /**
-   * 統計某玩家是否已使用過該款遊戲的「1 次新手免費測試開局額度」（取消的賽桌不計入）
+   * 統計某玩家是否已使用過該款遊戲的「1 次新手免費測試機會」（包含自己開房或加入別人的測試房；取消的賽桌不計入，跨日永不重置）
    */
-  function getTestHostUsage(playerId, gameType, tables) {
+  function getTestHostUsage(playerId, gameType, tables, playerObj = null) {
+    if (!playerId || !gameType) return 0;
+    if (playerObj && Array.isArray(playerObj.tested_games) && playerObj.tested_games.includes(gameType)) {
+      return 1;
+    }
     let used = 0;
     (tables || []).forEach((t) => {
-      if (!t.is_test_run || t.status === "cancelled") return;
-      if (t.host_id === playerId && t.game_type === gameType) used += 1;
+      if (!t.is_test_run || t.status === "cancelled" || t.game_type !== gameType) return;
+      const inRoom =
+        t.host_id === playerId ||
+        (t.participants || []).some((p) => p.id === playerId && !p.forfeited);
+      if (inRoom) used += 1;
     });
     return used;
   }
@@ -685,105 +692,81 @@
 
     const stake = Number(table.stake) || g.partyPlayStake || 20;
     const hhRate = table.is_happy_hour ? Number(g.happyHourBonusRate) || 0.5 : 0;
+    const ledgerBatch = [];
 
-    // 選手獎池派發（僅對 isScoring 選手發放；陪玩選手輸贏皆 0 分；落敗之 isScoring 選手不退本金正常失分！）
+    // 選手獎金派發（僅對 isScoring 選手發放；陪玩選手輸贏皆 0 分；落敗或中途棄權之選手不退本金！）
     if (scoringPlayers.length > 0) {
       if (winSet.has("__pvp_tie__")) {
-        // 平手和局：全額退還計分參賽者本金
-        for (const sp of scoringPlayers) {
-          await window.PartyDB.upsert(
-            "ledger",
-            [
-              {
-                id: `table_tie_refund_${table.id}_${sp.id}`,
-                player_id: sp.id,
-                delta: stake,
-                category: "bet_refund",
-                reason: `⚖️ 賽桌平手退回本金【${table.title}】`,
-                day_key: dayKey,
-                meta: { tableId: table.id },
-              },
-            ],
-            { ignoreDuplicates: true }
-          );
+        // 平手和局：全額退還「未棄權」計分參賽者本金
+        for (const sp of scoringPlayers.filter((p) => !p.forfeited)) {
+          ledgerBatch.push({
+            id: `table_tie_refund_${table.id}_${sp.id}`,
+            player_id: sp.id,
+            delta: stake,
+            category: "bet_refund",
+            reason: `⚖️ 賽桌平手退回本金【${table.title}】`,
+            day_key: dayKey,
+            meta: { tableId: table.id },
+          });
         }
       } else if (scoringWinners.length > 0 && !winSet.has("__coop_fail__")) {
         const isItoCoop = table.game_type === "ito_numbers";
         const isSoulCoop2 = table.game_type === "soul_sync_2v2" && participants.length === 2;
 
         if (isItoCoop) {
-          // 🔢 ito 3~8 人合作過關階梯獎勵 (+20 / +30 / +45 / +60 / +80 / +100，Happy Hour 淨利再 +50%)
+          // 🔢 ito 3~8 人合作過關階梯獎金 (+20 / +30 / +45 / +60 / +80 / +100，Happy Hour 獎金再 +50%)
           const pCnt = participants.length;
           const baseNet = getItoBaseNetProfit(pCnt);
           const finalNet = Math.round(baseNet * (1 + hhRate));
           const payout = stake + finalNet;
           for (const w of scoringWinners) {
-            await window.PartyDB.upsert(
-              "ledger",
-              [
-                {
-                  id: `table_win_${table.id}_${w.id}`,
-                  player_id: w.id,
-                  delta: payout,
-                  category: "party_win",
-                  reason: `🏆 ito ${pCnt}人合作過關【退回${stake}+獎金${finalNet} PT】`,
-                  day_key: dayKey,
-                  meta: { tableId: table.id, gameType: table.game_type },
-                },
-              ],
-              { ignoreDuplicates: true }
-            );
+            ledgerBatch.push({
+              id: `table_win_${table.id}_${w.id}`,
+              player_id: w.id,
+              delta: payout,
+              category: "party_win",
+              reason: `🏆 ito ${pCnt}人合作過關【退回${stake}+獎金${finalNet} PT】`,
+              day_key: dayKey,
+              meta: { tableId: table.id, gameType: table.game_type },
+            });
           }
         } else if (isSoulCoop2) {
-          // 🤝 2v2 靈魂默契 (2人合作闖關)：5~6題淨賺+20，7~8題大滿貫淨賺+35 (Happy Hour 淨賺再 +50%)
+          // 🤝 2v2 靈魂默契 (2人合作闖關)：5~6題獎金+20，7~8題大滿貫獎金+35 (Happy Hour 獎金再 +50%)
           const hits = Number(table.game_state?.scores?.team_A) || 5;
           const baseNet = hits >= 7 ? 35 : 20;
           const finalNet = Math.round(baseNet * (1 + hhRate));
           const payout = stake + finalNet;
           for (const w of scoringWinners) {
-            await window.PartyDB.upsert(
-              "ledger",
-              [
-                {
-                  id: `table_win_${table.id}_${w.id}`,
-                  player_id: w.id,
-                  delta: payout,
-                  category: "party_win",
-                  reason: `💞 靈魂默契(${hits}/8題)${hits >= 7 ? "大滿貫" : "過關"}【退回${stake}+獎金${finalNet} PT】`,
-                  day_key: dayKey,
-                  meta: { tableId: table.id, gameType: table.game_type },
-                },
-              ],
-              { ignoreDuplicates: true }
-            );
+            ledgerBatch.push({
+              id: `table_win_${table.id}_${w.id}`,
+              player_id: w.id,
+              delta: payout,
+              category: "party_win",
+              reason: `💞 靈魂默契(${hits}/8題)${hits >= 7 ? "大滿貫" : "過關"}【退回${stake}+獎金${finalNet} PT】`,
+              day_key: dayKey,
+              meta: { tableId: table.id, gameType: table.game_type },
+            });
           }
         } else {
-          // PvP / 多人大亂鬥：以整桌參賽人數規模計算標準獎池，平分給本局所有贏家（其中僅 isScoring 贏家入帳，陪玩贏家拿 0 分！）
+          // PvP / 多人大亂鬥：以整桌參賽人數規模計算標準總獎金，平分給本局所有贏家
           const fullBasePot = participants.length * stake;
           const fullHhBonus = table.is_happy_hour ? Math.round(fullBasePot * hhRate) : 0;
           const fullTablePot = fullBasePot + fullHhBonus;
           const winnerCount = Math.max(1, actualWinners.length);
           const perWinnerShare = Math.floor(fullTablePot / winnerCount);
           for (const w of scoringWinners) {
-            await window.PartyDB.upsert(
-              "ledger",
-              [
-                {
-                  id: `table_win_${table.id}_${w.id}`,
-                  player_id: w.id,
-                  delta: perWinnerShare,
-                  category: "party_win",
-                  reason: `🏆 賽桌奪冠【${table.title}】${fullHhBonus > 0 ? " (含限時加成!)" : ""}`,
-                  day_key: dayKey,
-                  meta: { tableId: table.id, gameType: table.game_type },
-                },
-              ],
-              { ignoreDuplicates: true }
-            );
+            ledgerBatch.push({
+              id: `table_win_${table.id}_${w.id}`,
+              player_id: w.id,
+              delta: perWinnerShare,
+              category: "party_win",
+              reason: `🏆 賽桌奪冠【${table.title}】${fullHhBonus > 0 ? " (含限時加成!)" : ""}`,
+              day_key: dayKey,
+              meta: { tableId: table.id, gameType: table.game_type },
+            });
           }
         }
       }
-      // 注意：若計分選手落敗（包含輸給 0 分陪玩選手，或合作翻車 __coop_fail__），不退回入場費 stake，如實失分 -20 PT！
     }
 
     // 場邊下注結算（雙邊對賭成立制！）
@@ -796,58 +779,59 @@
 
       if (distinctPicks.size < 2 || winningBets.length === 0) {
         // 單邊無對家 或 全場無人猜中 -> 全額退還原注碼！
+        await Promise.all(
+          tableBets.map((b) =>
+            window.PartyDB.update("bets", `id=eq.${encodeURIComponent(b.id)}`, {
+              status: "refunded",
+              payout: b.amount,
+            })
+          )
+        );
         for (const b of tableBets) {
-          await window.PartyDB.update("bets", `id=eq.${encodeURIComponent(b.id)}`, {
-            status: "refunded",
-            payout: b.amount,
+          ledgerBatch.push({
+            id: `bet_refund_${b.id}`,
+            player_id: b.bettor_id,
+            delta: Number(b.amount) || 10,
+            category: "bet_refund",
+            reason:
+              distinctPicks.size < 2
+                ? `↩️ 場邊無人對賭退回押注【${table.title}】`
+                : `↩️ 場邊無人猜中退回押注【${table.title}】`,
+            day_key: dayKey,
+            meta: { tableId: table.id, betId: b.id },
           });
-          await window.PartyDB.upsert(
-            "ledger",
-            [
-              {
-                id: `bet_refund_${b.id}`,
-                player_id: b.bettor_id,
-                delta: Number(b.amount) || 10,
-                category: "bet_refund",
-                reason:
-                  distinctPicks.size < 2
-                    ? `↩️ 場邊無人對賭流盤退費【${table.title}】`
-                    : `↩️ 場邊無人猜中退回本金【${table.title}】`,
-                day_key: dayKey,
-                meta: { tableId: table.id, betId: b.id },
-              },
-            ],
-            { ignoreDuplicates: true }
-          );
         }
       } else {
         const totalPool = tableBets.reduce((acc, b) => acc + (Number(b.amount) || 10), 0);
         const eachPayout = Math.floor(totalPool / winningBets.length);
+        await Promise.all(
+          tableBets.map((b) => {
+            const won = winningBets.some((wb) => wb.id === b.id);
+            return window.PartyDB.update("bets", `id=eq.${encodeURIComponent(b.id)}`, {
+              status: won ? "won" : "lost",
+              payout: won ? eachPayout : 0,
+            });
+          })
+        );
         for (const b of tableBets) {
           const won = winningBets.some((wb) => wb.id === b.id);
-          await window.PartyDB.update("bets", `id=eq.${encodeURIComponent(b.id)}`, {
-            status: won ? "won" : "lost",
-            payout: won ? eachPayout : 0,
-          });
           if (won) {
-            await window.PartyDB.upsert(
-              "ledger",
-              [
-                {
-                  id: `bet_win_${b.id}`,
-                  player_id: b.bettor_id,
-                  delta: eachPayout,
-                  category: "bet_payout",
-                  reason: `💰 場邊押注命中派彩【${table.title}】`,
-                  day_key: dayKey,
-                  meta: { tableId: table.id, betId: b.id },
-                },
-              ],
-              { ignoreDuplicates: true }
-            );
+            ledgerBatch.push({
+              id: `bet_win_${b.id}`,
+              player_id: b.bettor_id,
+              delta: eachPayout,
+              category: "bet_payout",
+              reason: `💰 場邊押注命中獎金【${table.title}】`,
+              day_key: dayKey,
+              meta: { tableId: table.id, betId: b.id },
+            });
           }
         }
       }
+    }
+
+    if (ledgerBatch.length > 0) {
+      await window.PartyDB.upsert("ledger", ledgerBatch, { ignoreDuplicates: true });
     }
 
     await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(table.id)}`, {
@@ -1006,9 +990,10 @@
     const switchCands = (players || []).map((p) => ({
       id: p.id,
       metric: switchStats[p.id] ? switchStats[p.id].count : 0,
-      breadth: preBoard.byId[p.id] ? preBoard.byId[p.id].interactionCount : 0,
-      lastAt: switchStats[p.id] ? switchStats[p.id].lastAt : "",
+      breadth: 0,
+      lastAt: "",
     }));
+    // 👑 Switch 大魔王：不限一般/限時加成時段，累積奪冠次數最高者獲得；最高並列則同獲
     for (const w of pickCrownWinners(switchCands)) {
       await awardBadgeOnce(
         `crown_switch_${w.id}`,
