@@ -512,6 +512,36 @@
     },
 
     async syncClock() {
+      const fbUrl = getFirebaseUrl();
+      if (fbUrl) {
+        try {
+          const probeId = encodeURIComponent(this.getDeviceId());
+          const url = `${fbUrl}/__clock_probe__/${probeId}.json`;
+          let bestRtt = Infinity;
+          let bestOffset = clockOffsetMs;
+          // 連續取樣 2 次（第 1 次建立 TLS 連線，第 2 次取得純網路最低 RTT），實現 ±25ms 級跨手機時鐘對齊！
+          for (let i = 0; i < 2; i++) {
+            const t0 = Date.now();
+            const res = await fetch(url, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ".sv": "timestamp" }),
+              cache: "no-store",
+            });
+            if (res.ok) {
+              const serverMs = await res.json();
+              const t1 = Date.now();
+              const rtt = Math.max(0, t1 - t0);
+              if (typeof serverMs === "number" && Number.isFinite(serverMs) && rtt < bestRtt) {
+                bestRtt = rtt;
+                bestOffset = Math.round(serverMs - (t0 + rtt / 2));
+              }
+            }
+          }
+          clockOffsetMs = bestOffset;
+        } catch (_) {}
+        return;
+      }
       if (this.isCloud) return;
       try {
         const t0 = Date.now();
@@ -1025,14 +1055,20 @@
                   });
                   if (evType === "put" || evType === "patch") {
                     let applied = false;
+                    let ignoreProbe = false;
                     try {
                       const parsed = JSON.parse(dataLines.join("\n"));
                       if (parsed && typeof parsed === "object" && "path" in parsed) {
-                        applied = applyFirebaseSseEvent(fbUrl, evType, parsed.path, parsed.data);
+                        if (String(parsed.path || "").startsWith("/__clock_probe__")) {
+                          ignoreProbe = true;
+                        } else {
+                          applied = applyFirebaseSseEvent(fbUrl, evType, parsed.path, parsed.data);
+                        }
                       }
                     } catch (_) {
                       _fbRootCache = null;
                     }
+                    if (ignoreProbe) continue;
                     if (!applied) _fbRootCache = null;
                     if (skipInitialEmit) {
                       skipInitialEmit = false;
@@ -1055,6 +1091,7 @@
         const onVisibilityResume = () => {
           if (document.visibilityState === "visible") {
             _fbRootCache = null;
+            this.syncClock().catch(() => {});
             if (!sseConnected && abortCtrl) {
               try {
                 abortCtrl.abort();

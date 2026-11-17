@@ -140,11 +140,11 @@
 
           ${
             g.seasonStatus === "settled"
-              ? `<div class="my-cheer-tag">🏆 已完成最終結算（Viewer 頒獎典禮公開模式）</div>`
+              ? `<div class="my-cheer-tag">🏆 已完成最終結算（Viewer 頒獎典禮模式）</div>`
               : `<div style="margin-bottom:8px;">
-                  <div class="muted-xs" style="margin-bottom:6px;">🙈 防劇透保護中：後台不顯示秘密大腿配對名單，讓你也能當玩家！（開賽時系統會自動配對；若有新夥伴中途加入可點此重抽）</div>
+                  <div class="muted-xs" style="margin-bottom:6px;">🙈 防劇透：後台隱藏大腿名單；中途加人可點下方重抽。</div>
                   <button class="btn btn-secondary btn-xs" style="width:100%;" onclick="GMConsole.launchSeason()">
-                    🎲 重新洗牌配對全員秘密大腿／二腿 ＆ 補齊初始 ${g.initialPoints || 300} PT（目前 ${players.length} 人）
+                    🎲 重抽全員大腿配對 ＆ 補齊初始 ${g.initialPoints || 300} PT（${players.length} 人）
                   </button>
                 </div>`
           }
@@ -180,7 +180,8 @@
             </summary>
             <div class="cheer-btn-grid" style="margin-top:8px;">
               ${[
-                { k: "pre_event", label: "🎮 暖身與準備" },
+                { k: "pre_event", label: "🎮 暖身練習大廳" },
+                { k: "pre_checkin", label: "⏳ 行前倒數 (暫停開桌)" },
                 { k: "happy_hour", label: "🔥 限時加成 (+50%)" },
                 { k: "nye_gift", label: "🎆 跨年煙火簽到禮" },
               ]
@@ -195,12 +196,12 @@
 
         <!-- 手機角色單機綁定鎖開關 -->
         <div class="section-card" style="margin-top:14px;">
-          <div class="section-title">📱 角色單機綁定防雙登設定</div>
+          <div class="section-title">📱 角色單機綁定鎖</div>
           <p class="muted-xs" style="margin-bottom:8px;">
-            開啟後（<b>預設已開啟</b>），每個暱稱一註冊就綁定該支手機：本人同手機重開可無縫連回，但<b>其他手機輸入同名會被擋下</b>。本人換手機請到「🛏️ 分房&綠燈」按解除綁定；需要單機切多帳號測試時可暫時關閉。
+            開啟後每個暱稱綁定原手機防重複登入；換機請至「🛏️ 分房&綠燈」解綁。
           </p>
           <button class="btn ${g.enforceDeviceLock ? "btn-gold" : "btn-secondary"} btn-sm" style="width:100%;" onclick="GMConsole.toggleDeviceLock()">
-            ${g.enforceDeviceLock ? "🔒 目前：正式單機綁定鎖【已開啟】（禁止2台手機登同ID）" : "🧪 目前：彈性測試模式【未鎖定】（允許自由切換帳號測試）"}
+            ${g.enforceDeviceLock ? "🔒 單機綁定鎖【已開啟】" : "🧪 彈性測試模式【未鎖定】"}
           </button>
         </div>
 
@@ -305,12 +306,12 @@
         </div>
 
         <div class="section-card" style="margin-top:14px;border-color:rgba(244,63,94,0.5);">
-          <div class="section-title" style="color:#fda4af;">🏆 終局結算（依排程將於 ${esc(viewerTimeLabel)} 自動執行！）</div>
+          <div class="section-title" style="color:#fda4af;">🏆 終局結算（排程 ${esc(viewerTimeLabel)} 自動執行）</div>
           <p class="muted-xs" style="margin-bottom:10px;">
-            系統到達排程設定的【🏆 終局結算開獎】時段（<b>${esc(viewerTimeLabel)}</b>）時，會<b>全自動頒發 4 大王冠徽章 (+80 PT) 並公開秘密大腿與總冠軍</b>！下方按鈕僅供現場臨時決定提早開獎時手動使用：
+            到達終局時段將自動頒發 4 大王冠 (+80 PT) 並公開總榜；僅需提早開獎時再手動點擊：
           </p>
           <button class="btn btn-rose btn-sm" style="width:100%;" onclick="GMConsole.triggerFinalSettlement()">
-            🖐️ 提前手動執行終局結算並公開總榜
+            🖐️ 提前手動結算並公開總榜
           </button>
         </div>
       `;
@@ -435,9 +436,9 @@
       return `
         <!-- 1. GM 手動直接發分／扣分補償面板 -->
         <div class="section-card" style="border-color:rgba(251,191,36,0.55);">
-          <div class="section-title">🎁 GM 手動直接發分 ／ 扣分調整</div>
+          <div class="section-title">🎁 GM 手動加減分</div>
           <p class="muted-xs" style="margin-bottom:10px;">
-            當現場臨時加碼獎勵、實體裁判補發、或遇到有人斷線沒拿到分數時，可在此直接勾選玩家立即加減 PT（同步寫入對帳 Log）！
+            勾選玩家即可直接加碼或補發 PT（同步寫入對帳 Log）：
           </p>
 
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
@@ -848,14 +849,13 @@
 
       return `
         <div class="section-card">
-          <div class="section-title">⏰ 直覺式自動排程編輯器</div>
+          <div class="section-title">⏰ 自動排程編輯器</div>
           <p class="muted-xs" style="margin-bottom:10px;">
-            點選任一時段的「🕒 時間按鈕」即可彈出大按鈕時鐘選擇器！玩家看到的行事曆、開賽倒數計時器與終局自動結算時間皆會 <b>100% 連動此表</b>。
+            點選時間按鈕修改時段，前台行程表與倒數將即時同步。
           </p>
 
-          <!-- 一鍵平移整套四天起始日期（超適合彩排改日期或調整出發日！） -->
           <div class="gm-inline-bar" style="margin-bottom:12px;">
-            <div class="sub-label" style="margin-top:0;">📅 快速平移整套行程開賽首日（保留各時段幾點幾分，一鍵平移全部日期）：</div>
+            <div class="sub-label" style="margin-top:0;">📅 一鍵平移開賽首日（保留各時段幾點幾分）：</div>
             <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
               <input type="date" id="sch-base-date" class="input-dark" style="flex:1;" value="${esc(firstParts.dateKey)}">
               <button class="btn btn-primary btn-sm" onclick="GMConsole.shiftAllScheduleBaseDate()">套用平移</button>
@@ -1082,9 +1082,9 @@
 
       return `
         <div class="section-card">
-          <div class="section-title">🧪 4 人秘密彩排・時光機快速推進器</div>
-          <p class="muted-sm" style="margin-bottom:10px;">
-            透過加減時間 Offset 快轉或倒退「模擬排程時間」，讓你直接測試完整的<b>自動開賽倒數、自動切換時段、跨日 08:00 額度重置與自動終局結算</b>！
+          <div class="section-title">🧪 彩排時光機</div>
+          <p class="muted-xs" style="margin-bottom:10px;">
+            快轉／倒退模擬時間，測試自動換場、跨日 08:00 重置與終局結算。
           </p>
 
           <div class="clock-compare-box">

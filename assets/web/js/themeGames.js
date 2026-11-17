@@ -17,17 +17,16 @@
       id: "share_2026_2027",
       icon: "🌟",
       name: "跨年英雄紀元・分享篇",
-      sub: "2026 回顧 & 2027 展望兩輪盲猜 (+10/+20 PT，題主 +15 PT)",
+      sub: "2026 回顧 & 2027 展望盲猜 (+10/+20 PT，題主 +15 PT)",
       rules: [
-        "分兩輪進行：Round 1 猜大家預填的【2026 年度代表故事】，Round 2 猜【2027 最想完成的事】。",
-        "每題系統隨機抽出一張匿名分享卡，所有人同時在手機猜兩件事：① 這件事屬於現場哪一位？ ② 四個細節選項中，哪一個才是「真實事實」（另三個是本人瞎掰的假細節）？",
-        "🤫 防破梗保護：故事主人自己也要跟著隨便點選裝忙！等全員鎖定後同步公布答案，再請主人現場分享 1 分鐘真實故事！"
+        "Round 1 猜【2026 回顧】，Round 2 猜【2027 展望】。",
+        "每題同時盲猜：① 故事主人是誰？ ② 哪個選項才是「真實細節」？",
+        "🤫 題主本人請跟著隨便點選防破梗；開獎後分享 1 分鐘真實故事。"
       ],
       scoring: [
-        "🎁 故事主人本人：題目開獎時固定獲得誠意分享獎 +15 PT（不參與該題猜題計分）。",
-        "🎯 其他猜題玩家：猜對「故事主人」+10 PT ＋ 猜對「真實細節」+10 PT（單題雙殺最高 +20 PT，猜錯不扣分！）。"
+        "🎁 題主固定獲分享獎 +15 PT；猜題者猜中主人 +10、猜中真細節 +10（雙殺 +20 PT）。"
       ],
-      achievements: ["🔮【讀心神探 +40 PT】：單輪（Round 1 或 Round 2）總猜題命中率達 70% 以上即自動獲得！"]
+      achievements: ["🔮【讀心神探 +40 PT】：單輪總命中率達 70% 以上自動獲得。"]
     },
     {
       id: "poll_minority",
@@ -35,12 +34,11 @@
       name: "匿名靈魂爆料派對",
       sub: "匿名指認現場夥伴（可投自己），命中最高票 +15 PT",
       rules: [
-        "看到題目後，每人在手機上匿名點選 1 位最符合描述的現場朋友（也可以投自己！）。",
-        "開票只公布當題「前 3 高票得主」，絕不公開誰投給誰，保護友誼又能盡情爆料！",
-        "Host 也可在現場隨時臨時打字插播剛發生的民宿內梗題！"
+        "每題匿名投給 1 位最符合的夥伴（可投自己）。",
+        "開票僅公布前 3 高票，不公開誰投誰；Host 可隨時插播現場內梗題。"
       ],
       scoring: [
-        "🗳️ 凡是投給「當題最高票得主（含並列第 1）」的玩家，命中全場共識每人自動入帳 +15 PT（沒猜中 0 PT 不扣分）！"
+        "🗳️ 投給當題最高票得主（含並列第 1）者，每人 +15 PT。"
       ]
     },
     {
@@ -49,85 +47,79 @@
       name: "心電頻率同步",
       sub: "發訊員口頭暗示刻度，全員拉 0～100 滑桿猜靶心 (+15~50 PT)",
       rules: [
-        "每輪系統隨機指派 1 位玩家當【🎙️ 發訊員】，並抽出一道 0～100 雙端光譜題（如：0 完全過譽地雷 ◀──▶ 100 一生必推神作）。",
-        "只有發訊員手機看得到秘密目標刻度（如 78），發訊員必須「口頭講一個符合該刻度的具體事物」當提示（嚴禁講出任何數字或百分比！）。",
-        "其餘所有人在手機拉動 0～100 滑桿鎖定猜測位置，全員鎖定後一鍵開獎！"
+        "每輪隨機指派 1 位【🎙️ 發訊員】看秘密刻度（0～100），口頭舉例暗示（禁說數字）。",
+        "其餘玩家拉動 0～100 滑桿鎖定猜測，全員鎖定後開獎。"
       ],
       scoring: [
-        "🎯 猜題玩家：與正解誤差 ±4 以內（正中紅心）+50 PT；誤差 ±5～10 得 +30 PT；誤差 ±11～18 得 +15 PT；超過 18 得 0 PT。",
-        "🎙️ 發訊員助攻獎：依房內猜進得分圈（誤差 ±18 以內）的人數比例獲得 round(50 × 命中人數 / 房內猜題總人數) PT（全員進圈拿滿 +50 PT）！"
+        "🎯 猜題誤差 ±4 內 +50 PT、±5～10 得 +30 PT、±11～18 得 +15 PT。",
+        "🎙️ 發訊員依進圈（±18 內）人數比例獲最高 +50 PT 助攻分。"
       ]
     },
     {
       id: "undercover",
       icon: "🕵️",
       name: "誰是臥底",
-      sub: "動態配比平民／臥底／白板，自動盲抽發詞投票抓鬼 (+20~90 PT)",
+      sub: "自動盲抽平民／臥底／白板，發言推理投票抓內鬼 (+20~90 PT)",
       rules: [
-        "系統依入房人數自動隨機發詞：平民拿相同詞、臥底拿相近詞、5人以上自動混入 1 名無詞「白板」（7~11人配 2臥底+1白板；12~14人配 3臥底+1白板），Host 也能一起抽牌下場抓鬼！",
-        "每輪依畫面列出的發言順序「各講一句話形容自己的詞」（禁講出詞面字眼、禁直接照抄別人描述），講完後全員手機投票淘汰最高票者（平票則補講重投）。",
-        "勝負條件：所有臥底與白板出局 ➜ 平民獲勝；若存活「臥底+白板人數 ≥ 存活平民人數」（或剩 2 人仍未抓完）➜ 內鬼陣營獲勝！"
+        "系統依人數自動發詞（5人以上含無詞白板），Host 也可一起下場玩。",
+        "依序各講一句話形容（禁講詞面字、禁照抄），講完投票出局最高票（平票重投）。",
+        "內鬼全出局 ➜ 平民勝；存活內鬼 ≥ 存活平民（或剩 2 人未抓完）➜ 內鬼勝。"
       ],
       scoring: [
-        "🛡️ 平民陣營獲勝：存活平民每人 +40 PT，中途出局平民躺贏 +20 PT。",
-        "😈 內鬼陣營獲勝：存活臥底 +70 PT（出局臥底 +35 PT）、存活白板 +90 PT（出局白板 +30 PT）。",
-        "🎯 精準抓鬼獎：每輪正式淘汰開票時（平票重投不重複計），平民只要投中真正的臥底或白板，當下立即額外 +5 PT！"
+        "🛡️ 平民勝：存活 +40／出局 +20 PT；😈 內鬼勝：存活臥底 +70（出局 +35）、存活白板 +90（出局 +30）PT。",
+        "🎯 平民每次正式開票投中內鬼，當下額外 +5 PT。"
       ],
-      achievements: ["🕵️【影帝級臥底 +40 PT】：擔任臥底或白板，且內鬼陣營獲勝時仍「存活」即自動獲得！"]
+      achievements: ["🕵️【影帝級臥底 +40 PT】：擔任臥底或白板且存活獲勝自動獲得。"]
     },
     {
       id: "find_figurine",
       icon: "🏃‍♂️",
       name: "實體小人攻防戰",
-      sub: "雙隊上下半場攻守交換：GM 統一控時啟動，全員同步看倒數打卡 (+100 PT)",
+      sub: "A/B 隊上下半場攻守計時，勝隊全員 +100 PT",
       rules: [
-        "全員點擊加入房間後，由 Host (GM) 統一設定搜尋時間並隨機平分為 A 隊 vs B 隊（上下半場攻守交換：上半場 A 藏 B 找，下半場 B 藏 A 找）。",
-        "藏匿規範：限民宿公共區域，禁止藏個人行李、廁所馬桶或危險高處，每隻實體小人至少須露出 1/3 身體可見！藏好後由 Host (GM) 按下開始啟動全場倒數計時。",
-        "搜尋打卡：開始後全員手機同步顯示倒數計時；搜尋隊每找到 1 隻小人，立刻拿走實體小人並拍照傳到派對群組相簿，在手機對應編號打勾按「✅ 打卡收繳計時」鎖定秒數！"
+        "隨機平分 A/B 隊，上下半場攻守交換（上半 A 藏 B 找，下半 B 藏 A 找）。",
+        "藏匿限公共區且須露出 1/3 身體（禁藏私人物品／馬桶／高處）。",
+        "每找到 1 隻拍傳群組相簿並打勾按「✅ 打卡收繳計時」鎖定秒數。"
       ],
       scoring: [
-        "⚖️ 勝負判定：上下半場結束後，先比「尋獲總隻數多者勝」；若兩隊找齊相同隻數，則比「找到最後一隻的總耗時較短者勝」！",
-        "🏆 最快獲勝隊伍：全隊每人 +100 PT！",
-        "👏 完賽參與隊伍：全隊每人獲得完賽獎 +40 PT！"
+        "⚖️ 先比尋獲總隻數，同數比總耗時短者勝；勝隊每人 +100 PT、完賽隊 +40 PT。"
       ],
-      achievements: ["🔍【神探夏洛克 +40 PT】：所屬隊伍贏得攻防戰即全隊自動獲得！"]
+      achievements: ["🔍【神探夏洛克 +40 PT】：獲勝隊伍全員自動獲得。"]
     },
     {
       id: "physical_6stages",
       icon: "🏓",
       name: "實體六關紅藍大對抗",
-      sub: "隨機平分紅藍兩隊，6 個實體關卡每關獨立結算 (+30 PT/關)",
+      sub: "隨機分紅藍兩隊，6 關獨立結算（每關勝隊 +30 PT）",
       rules: [
-        "系統隨機將全員平均分為 🔴 紅隊 vs 🔵 藍隊（若總人數為奇數，少 1 人的隊伍自動抽出 1 位「✨ 平衡輪替代表」，在派代表關卡可上場 2 次確保總人次公平！）。",
-        "共進行 6 道實體趣味關卡（指定彈跳碗／懸崖冰壺／立水瓶搶球／九宮格連線／盲拉捲尺／人體秤重王），每比完一關由 GM 在手機點選該關贏家隊伍。"
+        "隨機平分紅藍兩隊（奇數時少人隊自動抽 1 位代表可多上場 1 次）。",
+        "共比 6 道實體關卡，每關結束由 Host 點選勝隊即時發分。"
       ],
       scoring: [
-        "💰 六關完全獨立計分：每贏下一關，獲勝隊伍「全體隊員」當場每人入帳 +30 PT（落敗隊伍該關 0 PT 不倒扣）！",
-        "🔥 6 關全勝最高每人可拿滿 +180 PT；就算前面關卡輸了，後面贏一關就現賺一關！"
+        "💰 6 關獨立計分，每贏一關全隊每人 +30 PT（6 關全勝最高 +180 PT）。"
       ]
     },
     {
       id: "nye_checkin",
       icon: "🎆",
       name: "跨年煙火倒數 ＆ 新年簽到禮",
-      sub: "全場手機依排程時間同步煙火倒數，歸零解鎖新年簽到禮 (+50 PT)",
+      sub: "全場同步跨年煙火倒數，歸零領簽到禮 (+50 PT)",
       rules: [
-        "依排程設定之跨年倒數時段進入畫面，全場手機自動對時同步倒數迎接新年！",
-        "倒數歸零煙火綻放瞬間解鎖「🎉 領取新年開運簽到禮」按鈕。"
+        "全場手機自動對時倒數，歸零綻放煙火並解鎖簽到按鈕。"
       ],
       scoring: [
-        "🎉 點擊領取新年簽到禮的在場每位夥伴，人人固定入帳新年開運積分 +50 PT（每人限領 1 次）！"
+        "🎉 點擊領取每人固定 +50 PT（限領 1 次）。"
       ]
     },
   ];
 
   const PHYSICAL_STAGES = [
-    { no: 1, title: "🎯 指定彈跳碗", prop: "乒乓球、大碗", rule: "限時 3 分鐘，兩隊各自排隊輪流接力！第 1 棒要讓球在桌上彈 1 下後碰到碗（碰到就算，不用進碗）即完成，下一棒難度 +1 變成彈 2 下、再下一棒彈 3 下…依此類推；失敗就換下一棒挑戰同一下數。3 分鐘到，累積推進到最多下的隊伍獲勝（贏隊全員 +30 PT）。" },
-    { no: 2, title: "📏 懸崖桌上冰壺", prop: "紙杯(裝少量水配重)、桌緣膠帶分區", rule: "在長桌尾端貼出 +10 / +30 / 最邊緣懸崖區 +50 分線（掉下桌子 0 分）。兩隊各派 5 棒紅藍交替推滑紙杯，後推者可把敵方杯子撞飛出界！10 杯推完結算桌面殘留總分高者勝（贏隊全員 +30 PT）。" },
-    { no: 3, title: "🍾 立水瓶快手搶球", prop: "裝 1/3 水寶特瓶×2、桌中央乒乓球×1", rule: "五戰三勝 (BO5)！每局雙方各派 1 人面對面同時甩立水瓶，誰先把水瓶「成功立穩在桌面」才准伸手搶桌中央那顆球！先搶到球拿 1 點，先拿 3 點隊伍勝（贏隊全員 +30 PT）。" },
-    { no: 4, title: "⭕ 九宮格乒乓連線", prop: "9 個紙杯排成 3×3 九宮格、雙色乒乓球", rule: "三戰兩勝 (BO3)！兩隊接力往 3×3 紙杯陣投球玩實體井字遊戲（OOXX），先讓己方顏色球在九宮格連成一直線／橫線／斜線即贏 1 局，先拿 2 局隊伍勝（贏隊全員 +30 PT）。" },
-    { no: 5, title: "📐 盲拉捲尺精準王", prop: "五金捲尺 1 個", rule: "共比 5 題！每題兩隊各派 1 人，喊出目標長度（如 68 公分、115 公分），挑戰者將捲尺「刻度面朝下不准偷看」憑手感拉出長度鎖死，翻面量測誤差公分數！5 題累積總誤差最小隊伍勝（贏隊全員 +30 PT）。" },
-    { no: 6, title: "⚖️ 人體電子秤重王", prop: "料理電子秤 1 台（先遮住螢幕數字）", rule: "三戰兩勝 (BO3)！每局公布目標重量（如 380g、777g），限時 45 秒在客廳隨手抓日用品／零食湊重放上秤（禁放手機怕摔），不可偷看讀數！時間到揭曉與目標克數誤差較小隊伍拿 1 點（贏隊全員 +30 PT）。" },
+    { no: 1, title: "🎯 指定彈跳碗", prop: "乒乓球、大碗", rule: "限時 3 分鐘接力：第 1 棒桌彈 1 下碰碗即過，下一棒變彈 2 下、3 下遞增（失敗換棒重試同下數），推進最多下者勝（+30 PT）。" },
+    { no: 2, title: "📏 懸崖桌上冰壺", prop: "配重紙杯、桌緣分數線", rule: "桌尾貼 +10／+30／懸崖 +50 分區（掉落 0 分）。兩隊各 5 棒交替推杯（可撞走敵杯），總分高者勝（+30 PT）。" },
+    { no: 3, title: "🍾 立水瓶快手搶球", prop: "1/3 水寶特瓶×2、乒乓球×1", rule: "BO5 搶 3 勝：雙方面對面甩立水瓶，先立穩者才准搶中央乒乓球（+30 PT）。" },
+    { no: 4, title: "⭕ 九宮格乒乓連線", prop: "3×3 紙杯陣、雙色球", rule: "BO3 搶 2 勝：接力投球進 3×3 紙杯玩 OOXX，先連成一線拿 1 局（+30 PT）。" },
+    { no: 5, title: "📐 盲拉捲尺精準王", prop: "捲尺×1", rule: "共 5 題：刻度朝下盲拉指定長度（如 68cm），5 題總誤差最小隊勝（+30 PT）。" },
+    { no: 6, title: "⚖️ 人體電子秤重王", prop: "料理電子秤×1（遮螢幕）", rule: "BO3 搶 2 勝：公布目標克數，45 秒抓現場物品湊重（禁放手機），誤差小者拿 1 點（+30 PT）。" },
   ];
 
   const ThemeGamesUI = {
@@ -355,29 +347,31 @@
 
         return `
           <div class="mini-game-box">
-            <div class="q-title">🌟 集合大廳（已入房 ${joinedPlayers.length} 人）</div>
-            <div class="muted-sm">${esc(lbA)}卡已填：${ready2026}/${joinedPlayers.length} ｜ ${esc(lbB)}卡已填：${ready2027}/${joinedPlayers.length}</div>
+            <div class="q-title">🌟 集合大廳（${joinedPlayers.length} 人）</div>
+            <div class="muted-xs">${esc(lbA)}已填：${ready2026}/${joinedPlayers.length} ｜ ${esc(lbB)}已填：${ready2027}/${joinedPlayers.length}</div>
             <div class="part-chips" style="margin:10px 0;">
               ${joinedPlayers
-                .map(
-                  (p) => `<span class="part-chip ${p.share_2026?.story && p.share_2027?.story ? "scoring" : "fun-only"}">
-                    ${esc(p.name)} ${p.share_2026?.story && p.share_2027?.story ? "✅" : "⏳待填"}
-                  </span>`
-                )
+                .map((p) => {
+                  const ok = Boolean(p.share_2026?.story && p.share_2027?.story);
+                  return `<span class="part-chip ${ok ? "scoring" : "fun-only"}">
+                    <span>${esc(p.name)}</span>
+                    <small style="color:${ok ? "#6ee7b7" : "#fcd34d"};">${ok ? "✅已填" : "⏳待填"}</small>
+                  </span>`;
+                })
                 .join("")}
             </div>
             ${
               myMissing
-                ? `<div class="toast-inline">⚠️ 你還沒填完分享卡！請切到下方「🏠 個人主頁 ➜ 個人資料填寫」補填即可馬上參加！</div>`
+                ? `<div class="toast-inline">⚠️ 尚未填完分享卡，請至「🏠 個人主頁 ➜ 個人資料填寫」補填。</div>`
                 : ""
             }
             ${
               isHost
                 ? `<div class="grid-2-btns" style="margin-top:12px;">
-                    <button class="btn btn-gold" onclick="ThemeGamesUI.startShareRound('${session.id}', '2026')">▶️ 啟動 Round 1 (${esc(lbA)})</button>
-                    <button class="btn btn-primary" onclick="ThemeGamesUI.startShareRound('${session.id}', '2027')">▶️ 啟動 Round 2 (${esc(lbB)})</button>
+                    <button class="btn btn-gold" onclick="ThemeGamesUI.startShareRound('${session.id}', '2026')">▶️ Round 1 (${esc(lbA)})</button>
+                    <button class="btn btn-primary" onclick="ThemeGamesUI.startShareRound('${session.id}', '2027')">▶️ Round 2 (${esc(lbB)})</button>
                   </div>`
-                : `<div class="muted-xs">等待 Host 啟動第一輪…</div>`
+                : `<div class="muted-xs">等待 Host 開局…</div>`
             }
           </div>
         `;
@@ -415,11 +409,17 @@
         <div class="mini-game-box">
           <div class="ss-top">
             <span class="badge-pill">Round ${st.year === "2026" ? `1：${esc(lbA)}` : `2：${esc(lbB)}`} (${idx + 1}/${items.length})</span>
-            <span class="muted-xs">已鎖定：${resps.length}/${joinedPlayers.length} 人</span>
+            <span class="q-tag ${resps.length >= joinedPlayers.length ? "q-ok" : "q-cheer"}">🔒 已鎖定 ${resps.length}/${joinedPlayers.length}</span>
           </div>
           ${
             !st.revealed && waitingNames.length > 0
-              ? `<div class="muted-xs" style="margin-top:4px;color:#fcd34d;">⏳ 尚未送出：${waitingNames.join("、")}</div>`
+              ? `<div class="part-chips" style="margin-top:6px;">
+                   ${waitingNames
+                     .map(
+                       (nm) => `<span class="part-chip fun-only" style="padding:2px 8px;"><span>⏳ ${nm}</span></span>`
+                     )
+                     .join("")}
+                 </div>`
               : ""
           }
 
@@ -434,7 +434,7 @@
 
           ${
             isStoryOwner && !st.revealed
-              ? `<div class="stealth-owner-hint">🤫 噓！這是你寫的題目，請跟大家一樣隨便點選裝忙防破梗（本題固定送你 +15 PT 分享獎）</div>`
+              ? `<div class="stealth-owner-hint">🤫 你的題目！請隨便點選裝忙防破梗（固定獲 +15 PT 分享獎）</div>`
               : ""
           }
 
@@ -442,19 +442,18 @@
             !st.revealed
               ? myResp && !isEditingShare
                 ? `<div class="locked-cheer-msg" style="text-align:center;">
-                     <div>🔒 你已鎖定答案（猜主人：<b>${esc(playerMap[myResp.payload?.ownerPick]?.name || "?")}</b> ／ 細節 <b>${["A", "B", "C", "D"][myResp.payload?.factPick] || "?"}</b>）！</div>
-                     <div class="muted-xs" style="margin-top:3px;">等全員選完後同步公布，絕不破梗！</div>
+                     <div>🔒 已鎖定（猜：<b>${esc(playerMap[myResp.payload?.ownerPick]?.name || "?")}</b> ／ 細節 <b>${["A", "B", "C", "D"][myResp.payload?.factPick] || "?"}</b>）</div>
                      <button type="button" class="btn btn-ghost btn-xs" style="margin-top:8px;border-color:rgba(251,191,36,0.55);color:#fde047;"
                        onclick="ThemeGamesUI.beginEditShareGuess('${stepKey}','${esc(myResp.payload?.ownerPick || "")}',${Number(myResp.payload?.factPick ?? -1)})">
-                       ↺ 開獎前修改我的猜測
+                       ↺ 開獎前修改
                      </button>
                    </div>`
                 : `
-                  <div class="sub-label">Step 1：猜這件事「屬於」現場哪一位？（+10 PT）</div>
+                  <div class="sub-label">Step 1：猜故事主人 (+10 PT)</div>
                   <div class="owner-pick-grid">
                     ${joinedPlayers
                       .map(
-                        (p) => `<button class="chip-select ${this.localShareOwnerPick === p.id ? "selected" : ""}"
+                        (p) => `<button class="chip-select ${this.localShareOwnerPick === p.id ? "selected" : ""}" title="${esc(p.name)}"
                           onclick="ThemeGamesUI.localShareOwnerPick='${p.id}';PartyApp.render();">
                           ${esc(p.name)}
                         </button>`
@@ -462,7 +461,7 @@
                       .join("")}
                   </div>
 
-                  <div class="sub-label" style="margin-top:10px;">Step 2：以下 4 個細節，哪一個才是「真實事實」？（+10 PT）</div>
+                  <div class="sub-label" style="margin-top:10px;">Step 2：猜哪個是真實細節 (+10 PT)</div>
                   <div class="opt-grid">
                     ${displayOptions
                       .map(
@@ -477,13 +476,13 @@
                   <div style="display:flex;gap:8px;margin-top:12px;">
                     ${
                       myResp
-                        ? `<button type="button" class="btn btn-ghost btn-sm" onclick="ThemeGamesUI.editingShareStepKey='';PartyApp.render();">取消修改</button>`
+                        ? `<button type="button" class="btn btn-ghost btn-sm" onclick="ThemeGamesUI.editingShareStepKey='';PartyApp.render();">取消</button>`
                         : ""
                     }
                     <button class="btn btn-gold" style="flex:1;"
                       ${!this.localShareOwnerPick || this.localShareFactPick < 0 ? "disabled" : ""}
                       onclick="ThemeGamesUI.submitShareGuess('${session.id}','${stepKey}')">
-                      ✅ ${myResp ? "更新鎖定我的猜測" : "鎖定送出我的猜測"}
+                      ✅ ${myResp ? "更新鎖定" : "鎖定送出猜測"}
                     </button>
                   </div>
                 `
@@ -785,12 +784,16 @@
       return `
         <div class="mini-game-box">
           <div class="ss-top">
-            <span class="badge-pill">🗳️ 匿名靈魂指認（命中最高票共識 +15 PT）</span>
-            <span class="muted-xs">已投票：${resps.length}/${joinedPlayers.length}</span>
+            <span class="badge-pill">🗳️ 匿名指認（命中最高票 +15 PT）</span>
+            <span class="q-tag ${resps.length >= joinedPlayers.length ? "q-ok" : "q-cheer"}">🗳️ 已投 ${resps.length}/${joinedPlayers.length}</span>
           </div>
           ${
             !st.revealed && pollWaitNames.length > 0
-              ? `<div class="muted-xs" style="margin-top:4px;color:#fcd34d;">⏳ 尚未投票：${pollWaitNames.join("、")}</div>`
+              ? `<div class="part-chips" style="margin-top:6px;">
+                   ${pollWaitNames
+                     .map((nm) => `<span class="part-chip fun-only" style="padding:2px 8px;"><span>⏳ ${nm}</span></span>`)
+                     .join("")}
+                 </div>`
               : ""
           }
 
@@ -802,15 +805,14 @@
                    ${
                      myResp
                        ? `<div class="my-cheer-tag" style="margin-bottom:8px;text-align:center;">
-                            ✅ 你目前投給：<b>${esc(playerMap[myResp.payload?.pick]?.name || "夥伴")}</b>
-                            <span class="muted-xs" style="display:block;margin-top:2px;color:#d1fae5;">（GM 開票前點選下方任何人皆可隨時改票！）</span>
+                            ✅ 已投：<b>${esc(playerMap[myResp.payload?.pick]?.name || "夥伴")}</b>（開票前點下方可改票）
                           </div>`
-                       : `<div class="muted-xs" style="margin-bottom:6px;">匿名投給 1 位最符合的夥伴（可投自己！投中最高票 +15 PT，開票前可隨時改票）：</div>`
+                       : `<div class="muted-xs" style="margin-bottom:6px;">點選 1 位最符合的夥伴（可投自己，開票前可改票）：</div>`
                    }
                    <div class="owner-pick-grid">
                      ${joinedPlayers
                        .map(
-                         (p) => `<button class="chip-select ${myResp?.payload?.pick === p.id ? "selected" : ""}" onclick="ThemeGamesUI.submitPollVote('${session.id}','${stepKey}','${p.id}')">
+                         (p) => `<button class="chip-select ${myResp?.payload?.pick === p.id ? "selected" : ""}" title="${esc(p.name)}" onclick="ThemeGamesUI.submitPollVote('${session.id}','${stepKey}','${p.id}')">
                            ${myResp?.payload?.pick === p.id ? "✅ " : ""}${esc(p.name)}${p.id === me.id ? "（我）" : ""}
                          </button>`
                        )
@@ -1027,18 +1029,21 @@
                       : 0;
                   return `<div class="reveal-card">
                     <div style="font-size:20px;font-weight:900;color:#fbbf24;">🎯 靶心正解：${st.target}</div>
-                    <div class="toast-inline" style="margin-top:6px;font-size:12.5px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
-                      <span>🎙️ 發訊員 <b>${esc(presenter.name)}</b> 助攻獎勵（${within18}/${roomGuessers} 人進得分圈）</span>
-                      <b class="${hostBonus > 0 ? "gold-text" : "muted-xs"}">+${hostBonus} PT</b>
+                    <div class="cb-row-3col" style="margin-top:6px;">
+                      <span class="cb-cell-main">🎙️ 發訊員 ${esc(presenter.name)}</span>
+                      <span class="cb-block-mid st-cyan">進圈 ${within18}/${roomGuessers}</span>
+                      <span class="cb-block-stat ${hostBonus > 0 ? "st-gold" : "st-wait"}">+${hostBonus} PT</span>
                     </div>
-                    <div style="margin-top:8px;">
+                    <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;">
                       ${guessList
                         .map((r) => {
                           const pts = r.diff <= 4 ? 50 : r.diff <= 10 ? 30 : r.diff <= 18 ? 15 : 0;
                           const isTop = r.diff === bestDiff && pts > 0;
-                          return `<div class="history-row">
-                            <span>${isTop ? "👑 " : ""}${esc(playerMap[r.player_id]?.name)} 猜 <b>${r.payload.val}</b> (誤差 ${r.diff})</span>
-                            <span class="${pts > 0 ? "gold-text" : "muted-xs"}">+${pts} PT</span>
+                          const nm = playerMap[r.player_id]?.name || r.player_id;
+                          return `<div class="cb-row-3col">
+                            <span class="cb-cell-main" title="${esc(nm)}">${isTop ? "👑 " : ""}${esc(nm)}</span>
+                            <span class="cb-block-mid">猜 ${r.payload.val} (差${r.diff})</span>
+                            <span class="cb-block-stat ${pts > 0 ? "st-gold" : "st-wait"}">+${pts} PT</span>
                           </div>`;
                         })
                         .join("")}
@@ -1113,14 +1118,14 @@
               : ""
           }
 
-          <div class="muted-sm" style="margin:10px 0;line-height:1.55;">
-            🎙️ 本輪發言順序（各講一句話形容）：<br>
-            <b style="color:#fde047;">${speakChain
+          <div class="toast-inline" style="margin:10px 0;background:rgba(15,23,42,0.85);border-color:rgba(251,191,36,0.35);">
+            <div class="muted-xs" style="margin-bottom:2px;">🎙️ 本輪發言順序（各講一句形容）：</div>
+            <div style="color:#fde047;font-weight:800;font-size:13px;">${speakChain
               .map((id, idx) => `${idx + 1}.${esc(playerMap[id]?.name || id)}`)
-              .join(" ➜ ")}</b>
+              .join(" ➜ ")}</div>
           </div>
 
-          ${ st.lastResultMsg ? `<div class="reveal-card" style="margin-bottom:10px;">${esc(st.lastResultMsg)}</div>` : "" }
+          ${st.lastResultMsg ? `<div class="reveal-card" style="margin-bottom:10px;">${esc(st.lastResultMsg)}</div>` : ""}
 
           ${
             !st.gameOver && amAlive
@@ -1128,16 +1133,16 @@
                   ${
                     myVote
                       ? `<div class="my-cheer-tag" style="margin-bottom:8px;text-align:center;">
-                           ✅ 本輪你目前投給：<b>${esc(playerMap[myVote.payload?.targetId]?.name || "")}</b>（已投 ${resps.length}/${aliveIds.length} 人，Host 截止開票前可隨時改票！）
+                           ✅ 已投：<b>${esc(playerMap[myVote.payload?.targetId]?.name || "")}</b>（${resps.length}/${aliveIds.length} 已投，開票前可改票）
                          </div>`
-                      : `<div class="sub-label">🗳️ 發言完畢請投票指認誰是內鬼（正式淘汰投對內鬼額外 +5 PT，開票前可隨時改票）：</div>`
+                      : `<div class="sub-label">🗳️ 投票指認內鬼（正式開票投中內鬼 +5 PT）：</div>`
                   }
                   <div class="owner-pick-grid">
                     ${aliveIds
                       .filter((id) => id !== me.id)
                       .map(
-                        (id) => `<button class="chip-select ${myVote?.payload?.targetId === id ? "selected" : ""}" onclick="ThemeGamesUI.voteUndercover('${session.id}','${stepKey}','${id}')">
-                          ${myVote?.payload?.targetId === id ? "✅ " : ""}指認淘汰 ${esc(playerMap[id]?.name || id)}
+                        (id) => `<button class="chip-select ${myVote?.payload?.targetId === id ? "selected" : ""}" title="${esc(playerMap[id]?.name || id)}" onclick="ThemeGamesUI.voteUndercover('${session.id}','${stepKey}','${id}')">
+                          ${myVote?.payload?.targetId === id ? "✅ " : "🗳️ "}${esc(playerMap[id]?.name || id)}
                         </button>`
                       )
                       .join("")}
@@ -1145,7 +1150,7 @@
                 </div>`
               : !st.gameOver && !amAlive && myRole
               ? `<div class="locked-cheer-msg" style="text-align:center;margin-top:8px;">
-                   👻 你已出局！請保持神秘旁觀推理，切勿透露自己的詞語喔！
+                   👻 已出局，請旁觀推理勿透露詞語
                  </div>`
               : ""
           }
@@ -1201,10 +1206,19 @@
       if (half === 3) {
         return `
           <div class="reveal-card">
-            <h3>🏆 尋找真實小人・攻防總結算！</h3>
-            <p style="margin:8px 0;">🅰️ A 隊找尋成績：找到 <b>${st.resA?.found || 0}/${st.totalCount}</b> 隻（耗時 ${((st.resA?.elapsedMs || 0) / 1000).toFixed(1)} 秒）</p>
-            <p style="margin:8px 0;">🅱️ B 隊找尋成績：找到 <b>${st.resB?.found || 0}/${st.totalCount}</b> 隻（耗時 ${((st.resB?.elapsedMs || 0) / 1000).toFixed(1)} 秒）</p>
-            <div style="font-size:18px;font-weight:900;color:#fbbf24;margin-top:8px;">${esc(st.winnerBanner || "")}</div>
+            <h3>🏆 尋找小人・攻防總結算</h3>
+            <div class="cb-team-vs" style="margin:10px 0;">
+              <div class="cb-team-card team-a">
+                <div class="cb-team-head"><span style="color:#7dd3fc;">🅰️ A 隊</span><span class="cb-team-score">${st.resA?.found || 0}/${st.totalCount} 隻</span></div>
+                <div class="muted-xs">耗時 ${((st.resA?.elapsedMs || 0) / 1000).toFixed(1)}s</div>
+              </div>
+              <div class="cb-vs-pill">VS</div>
+              <div class="cb-team-card team-b">
+                <div class="cb-team-head"><span style="color:#fde047;">🅱️ B 隊</span><span class="cb-team-score">${st.resB?.found || 0}/${st.totalCount} 隻</span></div>
+                <div class="muted-xs">耗時 ${((st.resB?.elapsedMs || 0) / 1000).toFixed(1)}s</div>
+              </div>
+            </div>
+            <div style="font-size:17px;font-weight:900;color:#fbbf24;">${esc(st.winnerBanner || "")}</div>
           </div>
         `;
       }
@@ -1230,12 +1244,25 @@
       return `
         <div class="mini-game-box">
           <div class="ss-top">
-            <span class="badge-pill">${half === 1 ? "上半場：A隊藏匿 ➜ B隊搜尋" : "下半場交換：B隊藏匿 ➜ A隊搜尋"}</span>
+            <span class="badge-pill">${half === 1 ? "上半場：A藏 ➜ B找" : "下半場：B藏 ➜ A找"}</span>
             <span class="gold-text">已尋獲 ${foundResps.length} / ${st.totalCount} 隻</span>
           </div>
-          <div class="muted-xs" style="margin:6px 0;">
-            🅰️ A隊：${st.teamA.map((id) => esc(playerMap[id]?.name)).join("、")}<br>
-            🅱️ B隊：${st.teamB.map((id) => esc(playerMap[id]?.name)).join("、")}
+          <div class="cb-team-vs">
+            <div class="cb-team-card team-a">
+              <div class="cb-team-head">
+                <span style="color:#7dd3fc;">🅰️ A隊</span>
+                <span class="q-tag ${half === 2 ? "q-ok" : "q-muted"}">${half === 1 ? "🙈 藏匿方" : "🔍 搜尋方"}</span>
+              </div>
+              <div class="cb-team-members">${st.teamA.map((id) => esc(playerMap[id]?.name)).join(" · ")}</div>
+            </div>
+            <div class="cb-vs-pill">VS</div>
+            <div class="cb-team-card team-b">
+              <div class="cb-team-head">
+                <span style="color:#fde047;">🅱️ B隊</span>
+                <span class="q-tag ${half === 1 ? "q-ok" : "q-muted"}">${half === 1 ? "🔍 搜尋方" : "🙈 藏匿方"}</span>
+              </div>
+              <div class="cb-team-members">${st.teamB.map((id) => esc(playerMap[id]?.name)).join(" · ")}</div>
+            </div>
           </div>
 
           ${
@@ -1343,16 +1370,28 @@
 
       return `
         <div class="mini-game-box">
-          <div class="rps-score" style="margin-bottom:8px;">
-            <span style="color:#fb7185;">🔴 紅隊 <b>${redWins}</b> 勝</span>
-            <span class="muted-xs">每關 +30 PT</span>
-            <span style="color:#38bdf8;"><b>${blueWins}</b> 勝 🔵 藍隊</span>
+          <div class="cb-team-vs" style="margin-bottom:8px;">
+            <div class="cb-team-card team-red">
+              <div class="cb-team-head">
+                <span style="color:#fda4af;">🔴 紅隊</span>
+                <span class="cb-team-score">${redWins} 勝</span>
+              </div>
+              <div class="cb-team-members">${st.redTeam.map((id) => esc(playerMap[id]?.name)).join(" · ")}</div>
+            </div>
+            <div class="cb-vs-pill">VS</div>
+            <div class="cb-team-card team-blue">
+              <div class="cb-team-head">
+                <span style="color:#7dd3fc;">🔵 藍隊</span>
+                <span class="cb-team-score">${blueWins} 勝</span>
+              </div>
+              <div class="cb-team-members">${st.blueTeam.map((id) => esc(playerMap[id]?.name)).join(" · ")}</div>
+            </div>
           </div>
-          <div class="muted-xs" style="margin-bottom:10px;">
-            🔴 紅隊：${st.redTeam.map((id) => esc(playerMap[id]?.name)).join("、")}<br>
-            🔵 藍隊：${st.blueTeam.map((id) => esc(playerMap[id]?.name)).join("、")}
-            ${st.doubleRepId ? `<br>✨ 奇數人數平衡輪替代表：<b>${esc(playerMap[st.doubleRepId]?.name)}</b>（派代表關卡可上場 2 次）` : ""}
-          </div>
+          ${
+            st.doubleRepId
+              ? `<div class="muted-xs" style="margin-bottom:8px;color:#fde047;">✨ 奇數平衡代表：<b>${esc(playerMap[st.doubleRepId]?.name)}</b>（代表賽可上場 2 次）</div>`
+              : ""
+          }
 
           <div class="stages-list">
             ${PHYSICAL_STAGES.map((sg) => {

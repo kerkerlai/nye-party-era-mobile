@@ -667,8 +667,9 @@
           .join(" ｜ ");
       }
 
-      // 3. 計算我個人的積分淨變化 (參賽 + 場邊應援)
+      // 3. 計算我個人的積分淨變化 (參賽 + 場邊應援)；若本人已主動棄權離場，不再補彈結算視窗干擾！
       const myPart = (table.participants || []).find((p) => p.id === myId);
+      if (myPart && myPart.forfeited) return;
       const myCheer = (this.data.cheers || []).find(
         (c) => c.table_id === table.id && c.supporter_id === myId
       );
@@ -2661,7 +2662,7 @@
 
       const innerHtml = `
         <p class="muted-xs" style="margin-bottom:8px;">
-          主動幫忙團體事務或早起現身客廳，點選下方項目請現場夥伴按確認即可入帳加分！（其餘遊戲成就徽章皆由系統自動發放）
+          幫忙團體事務或早起現身客廳，請現場夥伴確認即入帳：
         </p>
         ${
           myPendingChores.length > 0
@@ -2759,9 +2760,9 @@
           ${
             isPreEvent
               ? `<p class="muted-sm">
-                   正式團康行程開跑前，歡迎先完成以下 2 項行前設定，並可直接在下方<b>【派對暖身練習大廳】</b>免費體驗全部 7 款派對小遊戲！
+                   開跑前請先完成下方 2 項準備，並可於<b>【派對暖身練習大廳】</b>免費試玩 7 款小遊戲。
                  </p>`
-              : `<p class="muted-sm">花 1 分鐘確認通知音效並填好你的個人資料卡，就能無縫參與所有活動：</p>`
+              : `<p class="muted-sm">確認通知音效並填妥個人資料卡，即可參與所有活動：</p>`
           }
 
           <div class="checklist-box" style="margin-top:12px;">
@@ -2781,7 +2782,7 @@
       `;
     },
 
-    renderPreEventStage(ctx) {
+    renderPreEventStage(ctx, checkinOnly = false) {
       const effNow = window.PartyEngine.getEffectiveNowMs(
         ctx.globalCfg,
         window.PartyDB.serverNowMs
@@ -2811,18 +2812,29 @@
                    <div class="lcd-tile"><div id="lcd-mm" class="lcd-num">${String(mm).padStart(2, "0")}</div><div class="lcd-unit">分 (MIN)</div></div>
                    <div class="lcd-tile"><div id="lcd-ss" class="lcd-num">${String(ss).padStart(2, "0")}</div><div class="lcd-unit">秒 (SEC)</div></div>
                  </div>
-                 <div class="muted-xs">⏰ 預計正式開跑：<b>${esc(launchTimeTxt)}</b>（下方暖身練習大廳現已全天候開放試玩！）</div>
+                 <div class="muted-xs">⏰ 預計正式開跑：<b>${esc(launchTimeTxt)}</b>${checkinOnly ? "（主辦人將於開場時統一啟動賽桌！）" : "（下方暖身練習大廳現已全天候開放試玩！）"}</div>
                </div>`
             : ""
         }
-        ${this.renderFirstLoginCheckCard(ctx, true)}
-        ${window.PartyGamesUI.renderLobby(ctx, { forceTestOnly: true, unlimitedWarmup: true })}
+        ${this.renderFirstLoginCheckCard(ctx, !checkinOnly)}
+        ${
+          checkinOnly
+            ? `<div class="dining-hero-card">
+                 <div style="font-size:36px;">⏳🥂✨</div>
+                 <h3>行前期待倒數 ＆ 報到準備期間</h3>
+                 <p class="muted-sm" style="margin-top:6px;">
+                   正式開跑前暫停開桌！請先完成上方<b>通知測試</b>與<b>個人分享卡</b>。
+                 </p>
+               </div>`
+            : window.PartyGamesUI.renderLobby(ctx, { forceTestOnly: true, unlimitedWarmup: true })
+        }
       `;
     },
 
     renderGameStage(ctx) {
       const scene = ctx.sceneInfo.scene;
-      if (scene === "pre_event") return this.renderPreEventStage(ctx);
+      if (scene === "pre_event") return this.renderPreEventStage(ctx, false);
+      if (scene === "pre_checkin") return this.renderPreEventStage(ctx, true);
       if (scene === "viewer") return this.renderViewerSettlementStage(ctx);
 
       const firstLoginBanner = this.renderFirstLoginCheckCard(ctx, false);
@@ -2832,10 +2844,9 @@
           ${firstLoginBanner}
           <div class="dining-hero-card">
             <div style="font-size:38px;">🍽️🥂</div>
-            <h3>現在是用餐 ＆ 自由聊天時間！</h3>
+            <h3>用餐 ＆ 自由社交時間</h3>
             <p class="muted-sm" style="margin-top:6px;">
-              所有正式計分賽桌已暫時上鎖，請放下手機跟朋友好好吃飯聊天！<br>
-              （期間可解下方的<b>【個人 Chill 隱藏任務】</b>與<b>【神隊友互助打卡】</b>喔！）
+              計分賽桌暫停開放，好好吃飯聊天！期間可解下方<b>隱藏任務</b>與<b>神隊友打卡</b>。
             </p>
           </div>
           ${this.renderHiddenMissionsDrawer(ctx, true)}
@@ -2896,9 +2907,9 @@
             ${
               !myM.locked
                 ? `<div class="toast-inline" style="margin:8px 0;">
-                    💡 每天早上可免費重抽最多 ${g.maxMissionRerollsPerDay} 次（剩餘 <b>${rerollsLeft}</b> 次）。挑選滿意後請按<b>「🔒 鎖定今日任務」</b>才正式生效開解！
+                    💡 可免費重抽 ${g.maxMissionRerollsPerDay} 次（剩 <b>${rerollsLeft}</b> 次），選妥請按<b>「🔒 鎖定今日任務」</b>開解。
                   </div>`
-                : `<div class="muted-xs" style="margin:6px 0;">完成互動後點「申請達成」，選「互動當事人」＋「現場至少 1 位見證人」都按同意即自動領取 +${g.hiddenMissionPoints} PT！</div>`
+                : `<div class="muted-xs" style="margin:6px 0;">完成後點「申請達成」，經當事人＋1 位見證人確認即入帳 +${g.hiddenMissionPoints} PT。</div>`
             }
 
             <div class="mission-cards-list">
@@ -2918,7 +2929,7 @@
                   return `
                     <div class="mission-card ${isDone ? "done" : ""}">
                       <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <span class="badge-pill">【${esc(c.tag)}】${c.needPhoto ? "📸拍傳LINE" : "💬日常互動"}</span>
+                        <span class="badge-pill">【${esc(c.tag)}】${c.needPhoto ? "📸拍傳相簿" : "💬日常互動"}</span>
                         <span class="gold-text">+${g.hiddenMissionPoints} PT</span>
                       </div>
                       <div style="margin:6px 0;font-size:14px;">${esc(c.text)}</div>

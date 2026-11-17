@@ -323,15 +323,25 @@
         )
         .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
 
-      const recentFinished = (tables || [])
-        .filter(
-          (t) =>
-            t.status === "finished" &&
-            t.day_key === dayKey &&
-            (!forceTestOnly || t.is_test_run)
-        )
-        .sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)))
-        .slice(0, 12);
+      const myCheerByTable = {};
+      (cheers || []).forEach((c) => {
+        if (c.supporter_id === me.id && c.status !== "cancelled") {
+          myCheerByTable[c.table_id] = c;
+        }
+      });
+
+      const myFinished = (tables || [])
+        .filter((t) => {
+          if (t.status !== "finished" || t.day_key !== dayKey) return false;
+          if (forceTestOnly && !t.is_test_run) return false;
+          const didPlay = (t.participants || []).some((p) => p.id === me.id);
+          return didPlay || Boolean(myCheerByTable[t.id]);
+        })
+        .sort((a, b) =>
+          String(b.finished_at || b.updated_at || b.created_at).localeCompare(
+            String(a.finished_at || a.updated_at || a.created_at)
+          )
+        );
 
       const myActiveTbl = this.getMyActiveTable(me.id, tables);
 
@@ -339,11 +349,11 @@
         ${
           myActiveTbl
             ? `<div class="active-room-return-bar" onclick="PartyGamesUI.openRoomWindow('${myActiveTbl.id}')">
-                 <div>
-                   <div style="font-weight:900;color:#fef08a;font-size:14.5px;">🎮 你正在房間內：【${esc(myActiveTbl.title)}】</div>
-                   <div class="muted-xs">一次限參加 1 場遊戲・點此立即回到你的獨立對戰視窗！</div>
+                 <div style="min-width:0;flex:1;">
+                   <div style="font-weight:900;color:#fef08a;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">🎮 對戰進行中：【${esc(myActiveTbl.title)}】</div>
+                   <div class="muted-xs">點此返回專屬對戰室</div>
                  </div>
-                 <span class="btn btn-gold btn-xs" style="flex-shrink:0;">進入房間 ▸</span>
+                 <span class="btn btn-gold btn-xs" style="flex-shrink:0;">回房間 ▸</span>
                </div>`
             : ""
         }
@@ -353,11 +363,11 @@
             <span class="scene-pill ${forceTestOnly ? "pill-cyan" : isHappy ? "pill-fire" : "pill-gold"}">
               ${
                 unlimitedWarmup
-                  ? "🎮 派對暖身練習大廳（免費無限暢玩・可配 AI 陪練）"
+                  ? "🎮 派對暖身練習大廳（0分暢玩・支援 AI 陪練）"
                   : forceTestOnly
-                  ? "🧪 新手練習場（每款可免費試玩 1 次！）"
+                  ? "🧪 新手練習場（每款免費試玩 1 次）"
                   : isHappy
-                  ? "🔥 限時加成 Happy Hour（總榮譽池 +50%！）"
+                  ? "🔥 Happy Hour 限時加成（勝利 +50%）"
                   : "🎲 Party Game 自由賽桌"
               }
             </span>
@@ -372,20 +382,18 @@
           ${
             unlimitedWarmup
               ? `<p class="muted-xs" style="margin-top:7px;">
-                   💡 正式派對開跑前，所有 7 款小遊戲皆開放<b>免費無限暖身體驗</b>（0 積分消耗，可與朋友連線或召喚 <b>🤖 AI 陪練員</b> 即時對戰）！
+                   💡 開跑前開放 7 款小遊戲免費暖身（0 分，可連線或補 🤖 AI 陪練）。
                  </p>`
               : forceTestOnly
               ? `<p class="muted-xs" style="margin-top:7px;">
-                   💡 每款小遊戲皆有 <b>1 次免費測試機會</b>（開房或加入別人的測試房皆計入），也可召喚 <b>🤖 AI 陪練員</b> 單人熟悉玩法！
+                   💡 每款享 1 次免費測試（可揪人或補 🤖 AI 陪練）。
                  </p>`
               : `<details class="rule-guide-box" style="margin-top:9px;margin-bottom:0;">
-                  <summary>📜 賽桌正向計分 ＆ 免費應援規則（每日 08:00 重置額度）</summary>
+                  <summary>📜 賽桌計分 ＆ 應援速覽（每日 08:00 重置）</summary>
                   <div class="rule-block-inner">
-                    <div>• <b>🚪 獨立對戰室</b>：每人同時限參加 1 桌，進房自動開啟專屬視窗。</div>
-                    <div style="margin-top:4px;">• <b>⚔️ 免費參賽贏積分（每日 ${g.maxScoringPlaysPerGamePerDay} 次／款）</b>：全程免費不扣分！前 ${g.maxScoringPlaysPerGamePerDay} 局獲勝領取榮譽積分（完賽未勝亦得 <b>+${g.partyPartPts ?? 5} PT</b> 參與鼓勵分）；滿額後仍可免費<b>「🤝 陪玩」</b>（0 分，未滿額對手照常計分）。</div>
-                    <div style="margin-top:4px;">• <b>📣 場邊免費預測（每日 ${g.maxCheersPerGamePerDay} 次／款）</b>：開賽前免費點選看好的贏家（隨時可改選或取消），預測命中直接領 <b>+${g.partyCheerPts || 10} PT</b>，未命中 0 分不倒扣！</div>
-                    <div style="margin-top:4px;">• <b>🔥 限時加成</b>：Happy Hour 時段所有賽桌勝利獎勵額外 <b>+${Math.round((Number(g.happyHourBonusRate) || 0.5) * 100)}%</b>！</div>
-                    <div class="rule-achv-line"><b>🏅 專屬成就：</b>🚀【破冰先鋒 +25 PT】— 每日首位成功開桌完賽正式局的桌長自動獲得！</div>
+                    <div>• <b>⚔️ 參賽（每日 ${g.maxScoringPlaysPerGamePerDay} 次／款）</b>：免費不扣分，未勝亦得 <b>+${g.partyPartPts ?? 5} PT</b>；滿額後可免費「🤝 陪玩（0 分）」。</div>
+                    <div style="margin-top:4px;">• <b>📣 場邊預測（每日 ${g.maxCheersPerGamePerDay} 次／款）</b>：開賽前免費選贏家，命中 <b>+${g.partyCheerPts || 10} PT</b>。</div>
+                    <div style="margin-top:4px;">• <b>🔥 Happy Hour</b>：勝利積分 <b>+${Math.round((Number(g.happyHourBonusRate) || 0.5) * 100)}%</b> ｜ <b>🚀 破冰先鋒</b>：每日首桌完賽桌長 <b>+25 PT</b>。</div>
                   </div>
                 </details>`
           }
@@ -399,10 +407,10 @@
                 <div class="muted-sm" style="margin:6px 0 14px;">
                   ${
                     unlimitedWarmup
-                      ? "點下方按鈕任選一款派對小遊戲立即開局（支援召喚 AI 陪練員單人秒開戰）！"
+                      ? "任選一款小遊戲立即開局（支援單人配 AI 陪練）"
                       : forceTestOnly
-                      ? "任選一款尚未試玩的遊戲開啟免費測試局（可揪人或補 AI 陪練員）！"
-                      : "快開第一桌揪大家對決，或場邊應援預測賺積分！"
+                      ? "任選一款遊戲開啟免費測試局（支援 AI 陪練）"
+                      : "開桌揪人對決，或在場邊免費預測賺積分！"
                   }
                 </div>
                 <button class="btn ${forceTestOnly ? "btn-primary" : "btn-gold"}" onclick="PartyGamesUI.openCreateModal(${forceTestOnly})">
@@ -413,8 +421,7 @@
         }
 
         <div class="section-card" style="margin-top:16px;">
-          <div class="section-title">📊 ${forceTestOnly ? "7 款派對小遊戲玩法 ＆ 規則一覽" : `今日各遊戲額度 ＆ 規則（${esc(dayKey)}）`}</div>
-          <p class="muted-xs" style="margin-bottom:8px;">點擊任一遊戲可展開玩法、積分與成就說明：</p>
+          <div class="section-title">📊 ${forceTestOnly ? "7 款小遊戲規則一覽" : `今日遊戲額度 ＆ 規則（${esc(dayKey)}）`}</div>
           <div class="quota-grid">
             ${CFG.PARTY_GAMES.map((gm) => {
               const u = window.PartyEngine.getDailyGameUsage(me.id, gm.id, dayKey, tables, cheers);
@@ -451,29 +458,74 @@
         </div>
 
         ${
-          recentFinished.length > 0
+          myFinished.length > 0
             ? `<div class="section-card" style="margin-top:14px;">
-                <div class="section-title">🏁 今日近期完賽賽桌（點擊查看歷史回顧）</div>
-                ${recentFinished
-                  .map((t) => {
-                    const rawWinners = t.winner_ids || [];
-                    const isTie = rawWinners.includes("__pvp_tie__");
-                    const winners = rawWinners
-                      .filter((w) => w !== "__coop_fail__" && w !== "__pvp_tie__")
-                      .map((id) => (playerMap[id] ? playerMap[id].name : id));
-                    const tsParts = window.PartyEngine.taipeiParts(
-                      Date.parse(t.finished_at || t.updated_at || t.created_at || "") || Date.now()
-                    );
-                    const timeTag = `${tsParts.hh}:${tsParts.mi}`;
-                    return `<div class="history-row clickable-row" onclick="PartyApp.openTableHistoryModal('${esc(t.id)}')">
-                      <div style="min-width:0;flex:1;">
-                        <div><b>${esc(t.title)}</b></div>
-                        <div class="muted-xs">🕒 ${esc(timeTag)} 完賽・點擊看對戰回顧</div>
-                      </div>
-                      <span class="gold-text" style="white-space:nowrap;">${isTie ? "⚖️ 平手完賽" : winners.length ? `🏆 ${esc(winners.join("、"))}` : "💥 闖關失敗"} ▸</span>
-                    </div>`;
-                  })
-                  .join("")}
+                <details class="my-history-details">
+                  <summary>
+                    <span style="font-weight:800;font-size:15px;color:#fff;">🏁 我的今日完賽紀錄（${myFinished.length} 場）</span>
+                    <span class="sched-toggle-pill">
+                      <span class="hist-closed-txt">展開 ▾</span>
+                      <span class="hist-open-txt">收合 ▴</span>
+                    </span>
+                  </summary>
+                  <div class="my-history-scroll" data-scroll-key="my-finished-tables">
+                    ${myFinished
+                      .map((t) => {
+                        const rawWinners = t.winner_ids || [];
+                        const isTie = rawWinners.includes("__pvp_tie__");
+                        const isCoopFail = rawWinners.includes("__coop_fail__");
+                        const realWinIds = rawWinners.filter(
+                          (w) => w !== "__coop_fail__" && w !== "__pvp_tie__"
+                        );
+                        const didPlay = (t.participants || []).some((p) => p.id === me.id);
+                        const myCh = myCheerByTable[t.id];
+                        const tsParts = window.PartyEngine.taipeiParts(
+                          Date.parse(t.finished_at || t.updated_at || t.created_at || "") || Date.now()
+                        );
+                        const timeTag = `${tsParts.hh}:${tsParts.mi}`;
+
+                        const roleBadge = didPlay
+                          ? `<span class="cb-block-mid st-cyan">⚔️ 參賽</span>`
+                          : `<span class="cb-block-mid st-gold">📣 應援</span>`;
+
+                        let resCls = "st-wait";
+                        let resTxt = "👏 完賽 ▸";
+                        if (didPlay) {
+                          if (!isCoopFail && realWinIds.includes(me.id)) {
+                            resCls = "st-gold";
+                            resTxt = "🏆 獲勝 ▸";
+                          } else if (isTie) {
+                            resCls = "st-cyan";
+                            resTxt = "⚖️ 平手 ▸";
+                          } else if (isCoopFail) {
+                            resCls = "st-out";
+                            resTxt = "💥 翻車 ▸";
+                          }
+                        } else if (myCh) {
+                          if (myCh.status === "won") {
+                            resCls = "st-ready";
+                            resTxt = "🎯 命中 ▸";
+                          } else if (myCh.status === "refunded" || isTie) {
+                            resCls = "st-cyan";
+                            resTxt = "⚖️ 平手 ▸";
+                          } else {
+                            resCls = "st-wait";
+                            resTxt = "📣 未中 ▸";
+                          }
+                        }
+
+                        return `<div class="cb-row-3col clickable-row" onclick="PartyApp.openTableHistoryModal('${esc(t.id)}')">
+                          <div class="cb-cell-stack">
+                            <div class="cb-cell-main" title="${esc(t.title)}">${esc(t.title)}</div>
+                            <div class="muted-xs">🕒 ${esc(timeTag)}・點擊看回顧</div>
+                          </div>
+                          ${roleBadge}
+                          <span class="cb-block-stat ${resCls}">${resTxt}</span>
+                        </div>`;
+                      })
+                      .join("")}
+                  </div>
+                </details>
               </div>`
             : ""
         }
@@ -551,15 +603,25 @@
             </span>
           </div>
 
-          <div class="muted-xs" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
-            <span>👑 房主：<b>${esc(hostName)}</b> ｜ 🏃 選手 (${activeParts.length}/${gameMeta.maxPlayers})：<b>${activeParts.map((p) => esc(p.name)).join("、") || "等待加入"}</b>${liveWatchers.length > 0 ? ` ｜ 👀 觀戰：<b>${liveWatchers.map((w) => esc(w.name)).join("、")}</b>` : ""}</span>
-            ${
-              myCheer
-                ? `<span class="gold-text">📣 已預測：${esc(myCheer.pick_label)}${table.status === "open" ? " (可進房修改)" : ""}</span>`
-                : !table.is_test_run && tableCheers.length > 0
-                ? `<span class="cyan-text">📣 已有 ${tableCheers.length} 人預測 (+${Number(table.cheer_pts) || 10} PT)</span>`
-                : ""
-            }
+          <div style="margin-bottom:8px;display:flex;flex-direction:column;gap:5px;">
+            <div class="part-chips">
+              ${activeParts
+                .map(
+                  (p) => `<span class="part-chip ${p.id === table.host_id ? "scoring" : ""}" style="padding:2px 8px;">
+                    <span>${p.id === table.host_id ? "👑 " : ""}${esc(p.name)}</span>
+                  </span>`
+                )
+                .join("") || `<span class="muted-xs">等待加入</span>`}
+              <span class="q-tag q-muted">🏃 ${activeParts.length}/${gameMeta.maxPlayers}人</span>
+              ${liveWatchers.length > 0 ? `<span class="q-tag q-ok">👀 觀戰×${liveWatchers.length}</span>` : ""}
+              ${
+                myCheer
+                  ? `<span class="q-tag q-cheer">📣 已預測：${esc(myCheer.pick_label)}</span>`
+                  : !table.is_test_run && tableCheers.length > 0
+                  ? `<span class="q-tag q-cheer">📣 預測×${tableCheers.length}</span>`
+                  : ""
+              }
+            </div>
           </div>
 
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -764,16 +826,16 @@
           ${
             !amIn && canJoinMore && !myCheer
               ? table.is_test_run && !isWarmup && myTestUsed >= 1
-                ? `<div class="locked-cheer-msg" style="text-align:center;">✅ 你已使用過本遊戲的 1 次免費測試機會囉！</div>`
+                ? `<div class="locked-cheer-msg" style="text-align:center;">✅ 此遊戲免費測試機會已用</div>`
                 : `<button class="btn btn-primary" onclick="PartyGamesUI.joinTable('${table.id}')">
                     🙋 加入${
                       table.is_test_run
                         ? isWarmup
-                          ? "免費暖身練習局（0分暢玩）"
-                          : "免費測試局（扣此款 1 次試玩機會）"
+                          ? "暖身局（0分）"
+                          : "測試局（扣試玩1次）"
                         : nextIsScoring
-                        ? `參賽（第 ${usage.playCount + 1}/${g.maxScoringPlaysPerGamePerDay} 場計分局，免費不扣分）`
-                        : `陪玩參賽（已滿 ${g.maxScoringPlaysPerGamePerDay} 次輸贏 0 分；對手照常計分）`
+                        ? `計分賽（今日 ${usage.playCount + 1}/${g.maxScoringPlaysPerGamePerDay}）`
+                        : `陪玩（0分）`
                     }
                   </button>`
               : amIn && !isHost
@@ -783,7 +845,7 @@
 
           ${
             invalidSoulCount
-              ? `<div class="muted-xs" style="color:#fcd34d;">🤝 靈魂默契需為「2 人合作」或「4 人對抗」，目前 3 人請再等 1 位夥伴加入！</div>`
+              ? `<div class="muted-xs" style="color:#fcd34d;">🤝 靈魂默契限 2 人或 4 人，請再等 1 人加入</div>`
               : ""
           }
 
@@ -835,40 +897,40 @@
         ${
           table.is_test_run
             ? `<div class="cheer-panel">
-                 <div class="muted-xs" style="color:#7dd3fc;">🧪 免費練習局：0 分體驗、不開放應援預測${isWarmup ? "（暖身時段無限次暢玩）" : "；開戰後將扣除參與者本遊戲的 1 次試玩機會"}。</div>
+                 <div class="muted-xs" style="color:#7dd3fc;">🧪 練習局（0分，不開放預測）</div>
                </div>`
             : `<!-- 場邊觀眾免費應援預測區 -->
                <div class="cheer-panel">
                  <div class="cheer-header">
-                   <span>📣 場邊免費應援預測（已參與 ${tableCheers.length} 人・命中 +${table.cheer_pts || 10} PT）</span>
-                   <span class="muted-xs">免費參加不扣分！開賽前可隨時改選或取消</span>
+                   <span>📣 場邊預測（${tableCheers.length} 人參與・命中 +${table.cheer_pts || 10} PT）</span>
+                   <span class="muted-xs">開賽前可改選</span>
                  </div>
                  ${
                    amIn
-                     ? `<div class="muted-xs">你是本局參賽選手，專心應戰！（場外夥伴可免費參與預測）</div>`
+                     ? `<div class="muted-xs">你是參賽選手（場邊夥伴可免費預測）</div>`
                      : myCheer
                      ? `<div class="my-cheer-tag cheer-regret-row" style="margin-bottom:6px;">
-                          <span>✅ 已預測：<b>${esc(myCheer.pick_label)}</b>（猜中 +${table.cheer_pts || 10} PT，今日 ${usage.cheerCount}/${g.maxCheersPerGamePerDay}）</span>
-                          <button type="button" class="btn btn-ghost btn-xs" style="border-color:rgba(251,191,36,0.65);color:#fde047;flex-shrink:0;" onclick="PartyGamesUI.cancelMyCheer('${table.id}')">↺ 取消預測</button>
+                          <span>✅ 已選：<b>${esc(myCheer.pick_label)}</b>（今日 ${usage.cheerCount}/${g.maxCheersPerGamePerDay}）</span>
+                          <button type="button" class="btn btn-ghost btn-xs" style="border-color:rgba(251,191,36,0.65);color:#fde047;flex-shrink:0;" onclick="PartyGamesUI.cancelMyCheer('${table.id}')">↺ 取消</button>
                         </div>
                         <div class="cheer-btn-grid">
                           ${cheerTargets
                             .map(
-                              (ct) => `<button class="btn ${myCheer.pick_key === ct.key ? "btn-gold" : "btn-cheer"}" onclick="PartyGamesUI.placeCheer('${table.id}', '${esc(ct.key)}', '${esc(ct.label)}')">
+                              (ct) => `<button class="btn ${myCheer.pick_key === ct.key ? "btn-gold" : "btn-cheer"}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" onclick="PartyGamesUI.placeCheer('${table.id}', '${esc(ct.key)}', '${esc(ct.label)}')">
                                 ${myCheer.pick_key === ct.key ? "☑️ " : ""}${esc(ct.label)}
                               </button>`
                             )
                             .join("")}
                         </div>`
                      : cheerLeft <= 0
-                     ? `<div class="locked-cheer-msg">🔒 今日「${esc(gameMeta.name)}」免費預測已滿 ${g.maxCheersPerGamePerDay}/${g.maxCheersPerGamePerDay} 次（別款遊戲仍可參與！）</div>`
+                     ? `<div class="locked-cheer-msg">🔒 今日此遊戲預測已滿 ${g.maxCheersPerGamePerDay} 次</div>`
                      : cheerTargets.length < 2
-                     ? `<div class="muted-xs">等待至少 2 位選手入座即可開放場邊免費預測…</div>`
+                     ? `<div class="muted-xs">滿 2 人入座即開放預測…</div>`
                      : `<div class="cheer-btn-grid">
                          ${cheerTargets
                            .map(
-                             (ct) => `<button class="btn btn-cheer" onclick="PartyGamesUI.placeCheer('${table.id}', '${esc(ct.key)}', '${esc(ct.label)}')">
-                               ${esc(ct.label)} <small>(命中 +${table.cheer_pts || 10} PT)</small>
+                             (ct) => `<button class="btn btn-cheer" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" onclick="PartyGamesUI.placeCheer('${table.id}', '${esc(ct.key)}', '${esc(ct.label)}')">
+                               ${esc(ct.label)} <small>(+${table.cheer_pts || 10})</small>
                              </button>`
                            )
                            .join("")}
@@ -1027,8 +1089,25 @@
       } else if (table.game_type === "rps_king") {
         const wins = gs.wins || {};
         const rLogs = gs.roundLogs || [];
+        const fp1 = parts[0];
+        const fp2 = parts[1];
         processHtml = `
-          <div class="sub-label">✊ 猜拳總比分：${parts.map((p) => `${esc(p.name)} <b>${wins[p.id] || 0}勝</b>`).join(" vs ")}</div>
+          <div class="rps-scoreboard" style="margin-bottom:8px;">
+            <div class="rps-board-grid">
+              <div class="rps-side">
+                <div class="rps-pname">${esc(fp1?.name || "選手1")}</div>
+                <div class="rps-pips">${[0, 1, 2].map((i) => `<span class="rps-pip ${(wins[fp1?.id] || 0) > i ? "on" : ""}"></span>`).join("")}</div>
+              </div>
+              <div class="rps-center-score">
+                <div class="rps-big-nums"><span>${wins[fp1?.id] || 0}</span><small>:</small><span>${wins[fp2?.id] || 0}</span></div>
+                <div class="rps-vs-sub">FINAL</div>
+              </div>
+              <div class="rps-side">
+                <div class="rps-pname">${esc(fp2?.name || "選手2")}</div>
+                <div class="rps-pips">${[0, 1, 2].map((i) => `<span class="rps-pip ${(wins[fp2?.id] || 0) > i ? "on" : ""}"></span>`).join("")}</div>
+              </div>
+            </div>
+          </div>
           ${
             rLogs.length > 0
               ? `<div class="muted-xs" style="display:flex;flex-direction:column;gap:3px;">
@@ -1171,30 +1250,12 @@
         if (!playerMap[p.id]) playerMap[p.id] = p;
       });
 
-      const scoreBarHtml = `
-        <div class="rps-score" style="margin-bottom:8px;flex-wrap:wrap;gap:6px;font-size:13.5px;">
-          <span class="gold-text">🏆 搶 2 勝奪冠（第 ${roundSeq} 把）</span>
-          <span>${parts.map((p) => `${esc(p.name)} <b>${wins[p.id] || 0}/2勝</b>`).join(" ｜ ")}</span>
-        </div>
-        ${
-          gs.lastRound && gs.lastRound.msg
-            ? `<div class="toast-inline" style="margin-bottom:8px;font-size:12.5px;">
-                 <div><b>📣 上一把結果：</b>${esc(gs.lastRound.msg)}</div>
-                 ${
-                   gs.lastRound.times
-                     ? `<div class="muted-xs" style="margin-top:2px;">${Object.entries(gs.lastRound.times)
-                         .map(([pid, v]) => {
-                           const nm = playerMap[pid]?.name || pid;
-                           if (gs.lastRound.mode === "blind10") return v < 0 ? `${nm}:棄權` : `${nm}:${(v / 1000).toFixed(3)}s`;
-                           return v < 0 ? `${nm}:偷跑` : `${nm}:${v}ms`;
-                         })
-                         .join(" ｜ ")}</div>`
-                     : ""
-                 }
-               </div>`
-            : ""
-        }
-      `;
+      const lastRoundHtml =
+        gs.lastRound && gs.lastRound.msg
+          ? `<div class="toast-inline" style="margin-bottom:8px;font-size:12.5px;">
+               <div><b>📣 上把：</b>${esc(gs.lastRound.msg)}</div>
+             </div>`
+          : "";
 
       if (mode === "draw") {
         const myTime = times[me.id];
@@ -1209,55 +1270,67 @@
                 <button class="chip-btn active" ${!canSwitchMode ? "disabled" : ""} onclick="PartyGamesUI.switchQdMode('${table.id}','draw')">🔫 西部拔槍</button>
                 <button class="chip-btn" ${!canSwitchMode ? "disabled" : ""} onclick="PartyGamesUI.switchQdMode('${table.id}','blind10')">⏱️ 盲按 10.000s</button>
               </div>
-              <span class="gold-text" style="font-size:12.5px;">🏆 總榮譽池：${potPreview}</span>
+              <span class="rps-round-tag">搶2勝・第 ${roundSeq} 把（${potPreview}）</span>
             </div>
-            ${scoreBarHtml}
-            <div class="muted-xs" style="margin:4px 0 8px;">
-              ⚡ 等螢幕變紅秒按（偷跑淘汰）｜全員按完同步開牌，先搶 <b>2 勝</b>奪冠！
-            </div>
+            ${lastRoundHtml}
+            <div class="muted-xs" style="margin:2px 0 8px;">⚡ 等變紅秒按（偷跑出局），全員按完同步開牌</div>
             ${
               myTime !== undefined
-                ? `<div class="locked-cheer-msg" style="text-align:center;margin:10px 0;">
-                    ${myTime === -2 ? "🏳️ 已棄權" : myTime < 0 ? "❌ 這把偷跑犯規淘汰啦！" : `⚡ 這把你的純反應速度：<b class="gold-text">${myTime} ms</b>！`}
-                    （本把已完成 ${tappedCnt}/${parts.length} 人）
+                ? `<div class="locked-cheer-msg" style="text-align:center;margin:8px 0;">
+                    ${myTime === -2 ? "🏳️ 已棄權" : myTime < 0 ? "❌ 這把偷跑出局" : `⚡ 你的反應：<b class="gold-text">${myTime} ms</b>`}
+                    （${tappedCnt}/${parts.length} 人完成）
                   </div>`
                 : !amIn
-                ? `<div class="muted-sm" style="text-align:center;margin:10px 0;">👀 選手正在進行第 ${roundSeq} 把拔槍反應測試（已完成 ${tappedCnt}/${parts.length} 人，全數按完自動開牌揭曉毫秒數）…</div>`
+                ? `<div class="muted-sm" style="text-align:center;margin:8px 0;">👀 第 ${roundSeq} 把進行中（${tappedCnt}/${parts.length} 人完成）</div>`
                 : !activeLocal
                 ? `<button class="btn btn-gold" style="width:100%;" onclick="PartyGamesUI.qdStartLocalDraw('${table.id}')">
-                    🔫 點擊進入第 ${roundSeq} 把拔槍待命（等變紅秒按！）
+                    🔫 進入第 ${roundSeq} 把待命（變紅秒按）
                   </button>`
                 : activeLocal.phase === "armed"
                 ? `<div class="qd-pad armed" onclick="PartyGamesUI.qdTap('${table.id}')">
-                    <div style="font-size:26px;font-weight:800;">🤫 屏住呼吸…等螢幕變紅！</div>
-                    <div class="muted-xs" style="margin-top:4px;">現在按下去算偷跑淘汰喔！</div>
+                    <div style="font-size:25px;font-weight:800;">🤫 等螢幕變紅…</div>
+                    <div class="muted-xs" style="margin-top:4px;">偷按直接出局</div>
                   </div>`
                 : `<div class="qd-pad fired" onclick="PartyGamesUI.qdTap('${table.id}')">
-                    <div style="font-size:34px;font-weight:900;">💥 BANG！快按！！</div>
+                    <div style="font-size:34px;font-weight:900;">💥 BANG！快按！</div>
                   </div>`
             }
             <div class="qd-multi-list">
               ${parts
                 .map((p) => {
                   const v = times[p.id];
-                  const txt =
-                    v === undefined
-                      ? "⏳ 待命／測速中…"
-                      : allTapped || (amIn && p.id === me.id)
-                      ? v === -2
-                        ? "<span class='muted-xs'>🏳️ 棄權</span>"
-                        : v < 0
-                        ? "<span style='color:#fda4af;'>❌ 偷跑淘汰</span>"
-                        : `<b class="gold-text">⚡ ${v} ms</b>`
-                      : "🔒 已完成拔槍（等全員按完同步開牌）";
-                  return `<div class="qd-multi-row"><span><b>${esc(p.name)}</b> <small class="muted-xs">(${wins[p.id] || 0}/2勝)</small></span><span>${txt}</span></div>`;
+                  const w = wins[p.id] || 0;
+                  let statCls = "st-wait";
+                  let statTxt = "⏳ 待命";
+                  if (v !== undefined) {
+                    if (allTapped || (amIn && p.id === me.id)) {
+                      if (v === -2) {
+                        statCls = "st-out";
+                        statTxt = "🏳️ 棄權";
+                      } else if (v < 0) {
+                        statCls = "st-out";
+                        statTxt = "❌ 偷跑";
+                      } else {
+                        statCls = "st-gold";
+                        statTxt = `⚡ ${v} ms`;
+                      }
+                    } else {
+                      statCls = "st-ready";
+                      statTxt = "🔒 已鎖定";
+                    }
+                  }
+                  return `<div class="cb-row-3col">
+                    <span class="cb-cell-main" title="${esc(p.name)}">${esc(p.name)}</span>
+                    <span class="cb-block-mid ${w > 0 ? "st-gold" : ""}">🏆 ${w}/2勝</span>
+                    <span class="cb-block-stat ${statCls}">${statTxt}</span>
+                  </div>`;
                 })
                 .join("")}
             </div>
             ${
               isHost && hasValidScore && tappedCnt < parts.length
                 ? `<button class="btn btn-secondary btn-xs" style="width:100%;margin-top:8px;" onclick="PartyGamesUI.qdForceSettle('${table.id}')">
-                    🏁 有人離席未按？截止本把計分
+                    🏁 有人離席？截止本把計分
                   </button>`
                 : ""
             }
@@ -1277,42 +1350,53 @@
                 <button class="chip-btn" ${!canSwitchMode ? "disabled" : ""} onclick="PartyGamesUI.switchQdMode('${table.id}','draw')">🔫 西部拔槍</button>
                 <button class="chip-btn active" ${!canSwitchMode ? "disabled" : ""} onclick="PartyGamesUI.switchQdMode('${table.id}','blind10')">⏱️ 盲按 10.000s</button>
               </div>
-              <span class="gold-text" style="font-size:12.5px;">🏆 總榮譽池：${potPreview}</span>
+              <span class="rps-round-tag">搶2勝・第 ${roundSeq} 把（${potPreview}）</span>
             </div>
-            ${scoreBarHtml}
-            <div class="muted-xs" style="margin:4px 0 8px;">⏱️ 滿 3 秒自動蓋牌，最接近 <b>10.000 秒</b>拿 1 勝，先搶 <b>2 勝</b>奪冠！（已完成 ${doneCnt}/${parts.length} 人）</div>
+            ${lastRoundHtml}
+            <div class="muted-xs" style="margin:2px 0 8px;">⏱️ 3 秒自動蓋牌，最接近 <b>10.000s</b> 拿 1 勝（${doneCnt}/${parts.length} 人完成）</div>
             ${
               amIn && myVal === undefined
                 ? !localStart
-                  ? `<button class="btn btn-gold" style="width:100%;" onclick="PartyGamesUI.startBlind10('${table.id}')">▶️ 開始第 ${roundSeq} 把 10.000 秒挑戰</button>`
+                  ? `<button class="btn btn-gold" style="width:100%;" onclick="PartyGamesUI.startBlind10('${table.id}')">▶️ 啟動第 ${roundSeq} 把 10.000s 計時</button>`
                   : `<div class="qd-pad fired" id="blind10-pad-${table.id}" onclick="PartyGamesUI.stopBlind10('${table.id}')">
                       <div id="blind10-display-${table.id}" style="font-size:32px;font-weight:900;">計時中…點此拍停！</div>
                       <div class="muted-xs">目標：10.000 秒</div>
                     </div>`
                 : !amIn
-                ? `<div class="muted-sm" style="text-align:center;margin:8px 0;">👀 選手正在盲按挑戰中（已完成 ${doneCnt}/${parts.length} 人，全數按完同步揭曉秒數）…</div>`
+                ? `<div class="muted-sm" style="text-align:center;margin:8px 0;">👀 第 ${roundSeq} 把盲按中（${doneCnt}/${parts.length} 人完成）</div>`
                 : ""
             }
             <div class="qd-multi-list">
               ${parts
                 .map((p) => {
                   const v = times[p.id];
-                  const txt =
-                    v === undefined
-                      ? "⏳ 挑戰中…"
-                      : v < 0
-                      ? "<span class='muted-xs'>🏳️ 棄權</span>"
-                      : allDone || (amIn && p.id === me.id)
-                      ? `<b class="gold-text">${(v / 1000).toFixed(3)}s</b> <small class="muted-xs">(差 ${(Math.abs(v - 10000) / 1000).toFixed(3)}s)</small>`
-                      : "🔒 已拍停鎖定（等全員按完同步開牌）";
-                  return `<div class="qd-multi-row"><span><b>${esc(p.name)}</b> <small class="muted-xs">(${wins[p.id] || 0}/2勝)</small></span><span>${txt}</span></div>`;
+                  const w = wins[p.id] || 0;
+                  let statCls = "st-wait";
+                  let statTxt = "⏳ 挑戰中";
+                  if (v !== undefined) {
+                    if (v < 0) {
+                      statCls = "st-out";
+                      statTxt = "🏳️ 棄權";
+                    } else if (allDone || (amIn && p.id === me.id)) {
+                      statCls = "st-gold";
+                      statTxt = `${(v / 1000).toFixed(3)}s`;
+                    } else {
+                      statCls = "st-ready";
+                      statTxt = "🔒 已鎖定";
+                    }
+                  }
+                  return `<div class="cb-row-3col">
+                    <span class="cb-cell-main" title="${esc(p.name)}">${esc(p.name)}</span>
+                    <span class="cb-block-mid ${w > 0 ? "st-gold" : ""}">🏆 ${w}/2勝</span>
+                    <span class="cb-block-stat ${statCls}">${statTxt}</span>
+                  </div>`;
                 })
                 .join("")}
             </div>
             ${
               isHost && doneCnt >= 1 && !allDone
                 ? `<button class="btn btn-secondary btn-xs" style="width:100%;margin-top:8px;" onclick="PartyGamesUI.qdForceSettle('${table.id}')">
-                    🏁 有人離席未按？截止本把計分
+                    🏁 有人離席？截止本把計分
                   </button>`
                 : ""
             }
@@ -1333,43 +1417,46 @@
       const onlyOneLeft = high - low === 2;
       const forcedNum = low + 1;
       const gLogs = gs.guessLogs || [];
+      const gridCls = alive.length <= 2 ? "cb-grid-2" : "cb-grid-3";
 
       return `
         <div class="mini-game-box">
           <div class="bomb-range">${low} <span class="muted-sm">～</span> ? <span class="muted-sm">～</span> ${high}</div>
-          <div class="muted-sm" style="text-align:center;margin-bottom:8px;">
-            出牌順序：${alive
+          <div class="${gridCls}" style="margin-bottom:8px;">
+            ${alive
               .map((id, idx) => {
-                const nm = esc(playerMap[id]?.name || table.participants.find((p) => p.id === id)?.name || id);
-                return idx === turnIdx
-                  ? `<b class="gold-text" style="text-decoration:underline;">👉 ${nm}</b>`
-                  : nm;
+                const nm = playerMap[id]?.name || table.participants.find((p) => p.id === id)?.name || id;
+                const active = idx === turnIdx;
+                return `<div class="cb-player-card ${active ? "is-active" : ""} ${id === me.id ? "is-me" : ""}">
+                  <div class="cb-name" title="${esc(nm)}">#${idx + 1} ${esc(nm)}</div>
+                  <div class="cb-status ${active ? "st-gold" : "st-wait"}">${active ? "🎯 出牌中" : "⏳ 待命"}</div>
+                </div>`;
               })
-              .join(" ➜ ")}
+              .join("")}
           </div>
-          ${ gs.lastLog ? `<div class="toast-inline" style="margin-bottom:8px;">${esc(gs.lastLog)}</div>` : "" }
+          ${gs.lastLog ? `<div class="toast-inline" style="margin-bottom:8px;">${esc(gs.lastLog)}</div>` : ""}
           ${
             onlyOneLeft
               ? `<div class="toast-inline" style="border-color:rgba(251,113,133,0.65);color:#fda4af;text-align:center;margin-bottom:8px;">
-                   😱 前後包夾！全場只剩唯一數字 <b>${forcedNum}</b>，輪到 ${esc(turnPlayer.name)} 面對命運！
+                   😱 前後包夾！只剩唯一數字 <b>${forcedNum}</b>，輪到 ${esc(turnPlayer.name)}！
                  </div>`
               : ""
           }
           ${
             isMyTurn
               ? `<div class="my-cheer-tag" style="text-align:center;margin-bottom:6px;border-color:rgba(251,191,36,0.65);color:#fde047;">
-                   🔥 輪到你出數字！請輸入 <b>${low + 1} ～ ${high - 1}</b> 之間的整數
+                   🔥 輪到你：請輸入 <b>${low + 1} ～ ${high - 1}</b>
                  </div>
                  <div class="bomb-input-row">
                   <input type="number" inputmode="numeric" pattern="[0-9]*" id="bomb-val-${table.id}" class="input-dark" min="${low + 1}" max="${high - 1}" value="${onlyOneLeft ? forcedNum : ""}" placeholder="輸入 ${low + 1} ～ ${high - 1}" onkeydown="if(event.key==='Enter') PartyGamesUI.submitBombGuess('${table.id}')">
                   <button class="btn btn-gold" onclick="PartyGamesUI.submitBombGuess('${table.id}')">💣 送出</button>
                 </div>`
-              : `<div class="muted-xs" style="text-align:center;">⏳ 等待 <b>${esc(turnPlayer.name)}</b> 輸入 ${low + 1} ～ ${high - 1} 之間的數字…</div>`
+              : `<div class="muted-xs" style="text-align:center;">⏳ 等待 <b>${esc(turnPlayer.name)}</b> 出牌（${low + 1}～${high - 1}）</div>`
           }
           ${
             gLogs.length > 0
               ? `<div class="muted-xs" style="margin-top:8px;padding-top:6px;border-top:1px dashed rgba(148,163,184,0.2);">
-                   📜 已喊紀錄：${gLogs.slice(-6).map((g) => `${esc(g.name)}(${g.val})`).join(" ➜ ")}
+                   📜 紀錄：${gLogs.slice(-6).map((g) => `${esc(g.name)}(${g.val})`).join(" ➜ ")}
                  </div>`
               : ""
           }
@@ -1392,17 +1479,46 @@
       });
       const myMove = moves[me.id];
 
+      const p1Wins = wins[p1?.id] || 0;
+      const p2Wins = wins[p2?.id] || 0;
+
       return `
         <div class="mini-game-box">
-          <div class="rps-score">
-            <span>${esc(p1?.name)} <b>${wins[p1?.id] || 0}</b></span>
-            <span class="muted-sm">搶 3 勝（第 ${roundSeq} 拳）</span>
-            <span><b>${wins[p2?.id] || 0}</b> ${esc(p2?.name)}</span>
+          <div class="rps-scoreboard">
+            <div class="rps-board-top">
+              <span class="badge-pill">✊ 五戰三勝（搶 3 勝）</span>
+              <span class="rps-round-tag">第 ${roundSeq} 拳</span>
+            </div>
+            <div class="rps-board-grid">
+              <div class="rps-side ${p1?.id === me.id ? "is-me" : ""}">
+                <div class="rps-pname" title="${esc(p1?.name || "")}">${esc(p1?.name || "選手1")}</div>
+                <div class="rps-pips">
+                  ${[0, 1, 2].map((i) => `<span class="rps-pip ${p1Wins > i ? "on" : ""}"></span>`).join("")}
+                </div>
+                <div class="rps-move-pill ${moves[p1?.id] ? "ready" : ""}">
+                  ${moves[p1?.id] ? "✅ 已選拳" : "⏳ 思考中"}
+                </div>
+              </div>
+              <div class="rps-center-score">
+                <div class="rps-big-nums">
+                  <span>${p1Wins}</span>
+                  <small>:</small>
+                  <span>${p2Wins}</span>
+                </div>
+                <div class="rps-vs-sub">VS</div>
+              </div>
+              <div class="rps-side ${p2?.id === me.id ? "is-me" : ""}">
+                <div class="rps-pname" title="${esc(p2?.name || "")}">${esc(p2?.name || "選手2")}</div>
+                <div class="rps-pips">
+                  ${[0, 1, 2].map((i) => `<span class="rps-pip ${p2Wins > i ? "on" : ""}"></span>`).join("")}
+                </div>
+                <div class="rps-move-pill ${moves[p2?.id] ? "ready" : ""}">
+                  ${moves[p2?.id] ? "✅ 已選拳" : "⏳ 思考中"}
+                </div>
+              </div>
+            </div>
           </div>
-          ${ gs.lastRoundMsg ? `<div class="toast-inline" style="text-align:center;margin-top:6px;">${esc(gs.lastRoundMsg)}</div>` : "" }
-          <div class="muted-xs" style="text-align:center;margin-top:6px;">
-            本拳狀態：${esc(p1?.name)} ${moves[p1?.id] ? "✅已出拳" : "⏳思考中"} ｜ ${esc(p2?.name)} ${moves[p2?.id] ? "✅已出拳" : "⏳思考中"}
-          </div>
+          ${gs.lastRoundMsg ? `<div class="toast-inline" style="text-align:center;margin-top:8px;">${esc(gs.lastRoundMsg)}</div>` : ""}
           ${
             amIn
               ? `<div class="rps-btns">
@@ -1419,9 +1535,9 @@
                     .join("")}
                 </div>
                 <div class="muted-xs" style="text-align:center;margin-top:6px;">
-                  ${myMove ? "✅ 已暗中選拳（對手出拳前點別顆可改拳），雙方選完同步開牌！" : "請在手機上選擇這回合要出的拳，雙方選完自動開牌（搶 3 勝自動發放積分）！"}
+                  ${myMove ? "✅ 已選拳（開牌前點別顆可改拳）" : "點選本回合出拳，雙方選妥自動開牌"}
                 </div>`
-              : `<div class="muted-xs" style="text-align:center;margin-top:6px;">👀 雙方皆暗中選好拳後將自動開牌揭曉本拳勝負！</div>`
+              : `<div class="muted-xs" style="text-align:center;margin-top:6px;">👀 雙方選妥後自動開牌</div>`
           }
         </div>
       `;
@@ -1461,31 +1577,45 @@
         !isCoop2 && myEntry
           ? table.participants.find((p) => p.team === myEntry.team && p.id !== me.id)
           : null;
+      const statusGridCls = table.participants.length <= 2 ? "cb-grid-2" : "cb-grid-4";
 
       return `
         <div class="mini-game-box">
           <div class="ss-top">
             <span class="badge-pill">第 ${qIdx + 1} / ${questions.length} 題</span>
-            <span class="gold-text">
-              ${
-                isCoop2
-                  ? `💞 默契同步：${scores.team_A || 0} 題（5~6題 +20 / 7~8題 +35 PT）`
-                  : `🅰️ A組 ${scores.team_A || 0} 分 vs 🅱️ B組 ${scores.team_B || 0} 分`
-              }
-            </span>
+            ${
+              isCoop2
+                ? `<span class="gold-text">💞 同步 <b>${scores.team_A || 0}</b> 題（5~6題 +25 / 7~8題 +40 PT）</span>`
+                : myPartner
+                ? `<span class="gold-text">🤝 你的搭檔：<b>${esc(myPartner.name)}</b></span>`
+                : ""
+            }
           </div>
           ${
             !isCoop2
-              ? `<div class="muted-xs" style="margin-top:5px;padding:5px 8px;border-radius:8px;background:rgba(15,23,42,0.55);border:1px solid rgba(148,163,184,0.16);display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;">
-                   <span>🅰️ A組：<b>${teamAList.map((p) => esc(p.name)).join(" & ")}</b> ｜ 🅱️ B組：<b>${teamBList.map((p) => esc(p.name)).join(" & ")}</b></span>
-                   ${myPartner ? `<span style="color:#fde047;">🤝 你的搭檔：<b>${esc(myPartner.name)}</b></span>` : ""}
+              ? `<div class="cb-team-vs">
+                   <div class="cb-team-card team-a">
+                     <div class="cb-team-head">
+                       <span style="color:#7dd3fc;">🅰️ A組</span>
+                       <span class="cb-team-score">${scores.team_A || 0} 分</span>
+                     </div>
+                     <div class="cb-team-members">${teamAList.map((p) => esc(p.name)).join(" · ")}</div>
+                   </div>
+                   <div class="cb-vs-pill">VS</div>
+                   <div class="cb-team-card team-b">
+                     <div class="cb-team-head">
+                       <span style="color:#fde047;">🅱️ B組</span>
+                       <span class="cb-team-score">${scores.team_B || 0} 分</span>
+                     </div>
+                     <div class="cb-team-members">${teamBList.map((p) => esc(p.name)).join(" · ")}</div>
+                   </div>
                  </div>`
               : ""
           }
           ${
             gs.lastQResult && gs.lastQResult.summaryTxt
               ? `<div class="toast-inline" style="margin-top:6px;font-size:12px;">
-                   <b>上一題開牌：</b>${esc(gs.lastQResult.summaryTxt)}
+                   <b>上題：</b>${esc(gs.lastQResult.summaryTxt)}
                  </div>`
               : ""
           }
@@ -1505,9 +1635,9 @@
             amIn
               ? myLockedAns !== undefined && !isEditing
                 ? `<div class="locked-cheer-msg" style="margin-top:10px;text-align:center;">
-                     <div>🔒 你已鎖定選項 <b>${["A", "B", "C", "D"][myLockedAns]}</b>！等待其他選手鎖定中…</div>
+                     <div>🔒 已鎖定 <b>${["A", "B", "C", "D"][myLockedAns]}</b></div>
                      <button type="button" class="btn btn-ghost btn-xs" style="margin-top:6px;border-color:rgba(251,191,36,0.55);color:#fde047;" onclick="PartyGamesUI.unlockSoulDraft('${table.id}', ${qIdx}, ${myLockedAns})">
-                       ↺ 開牌前修改答案
+                       ↺ 開牌前改答案
                      </button>
                    </div>`
                 : `<div style="display:flex;gap:8px;margin-top:10px;">
@@ -1517,16 +1647,21 @@
                          : ""
                      }
                      <button type="button" class="btn btn-gold" style="flex:1;" ${myDraft === undefined ? "disabled" : ""} onclick="PartyGamesUI.answerSoulSync('${table.id}')">
-                       🔒 ${myLockedAns !== undefined ? "更新鎖定本題答案" : "確認鎖定本題答案"}
+                       🔒 ${myLockedAns !== undefined ? "更新鎖定" : "確認鎖定答案"}
                      </button>
                    </div>`
-              : `<div class="muted-xs" style="text-align:center;margin-top:8px;">👀 等待全體選手鎖定答案後自動同步開牌揭曉！</div>`
+              : `<div class="muted-xs" style="text-align:center;margin-top:8px;">👀 全員鎖定後自動開牌</div>`
           }
-          <div class="muted-xs" style="margin-top:8px;">
-            已鎖定：${table.participants
-              .filter((p) => answers[p.id] !== undefined)
-              .map((p) => esc(p.name))
-              .join("、") || "等待鎖定中…"}（${table.participants.filter((p) => answers[p.id] !== undefined).length}/${table.participants.length}）
+          <div class="${statusGridCls}" style="margin-top:8px;">
+            ${table.participants
+              .map((p) => {
+                const locked = answers[p.id] !== undefined;
+                return `<div class="cb-player-card ${p.id === me.id ? "is-me" : ""}">
+                  <div class="cb-name" title="${esc(p.name)}">${esc(p.name)}</div>
+                  <div class="cb-status ${locked ? "st-ready" : "st-wait"}">${locked ? "🔒 已鎖定" : "⏳ 作答中"}</div>
+                </div>`;
+              })
+              .join("")}
           </div>
         </div>
       `;
@@ -1542,12 +1677,16 @@
       const baseNet = window.PartyEngine.getItoBaseNetProfit(pCnt);
       const cleanLow = String(theme.low || "").replace(/^1\s*[:：]\s*/, "");
       const cleanHigh = String(theme.high || "").replace(/^100\s*[:：]\s*/, "");
+      const hostName =
+        playerMap[table.host_id]?.name ||
+        table.participants.find((x) => x.id === table.host_id)?.name ||
+        "桌長";
 
       return `
         <div class="mini-game-box">
-          <div class="q-title">🔢 本局主題：${esc(theme.title)}</div>
+          <div class="q-title">🔢 主題：${esc(theme.title)}</div>
           <div class="muted-xs" style="margin-bottom:6px;color:#fcd34d;">
-            🤝 ${pCnt} 人合作闖關：全員由小排到大成功每人淨賺 <b>+${baseNet} PT</b>（排錯則扣除門票積分）！
+            🤝 ${pCnt} 人合作：由小排到大過關每人 <b>+${baseNet} PT</b>（排錯亦得 +5 PT）
           </div>
 
           <!-- e: 左／中／右三個獨立清晰文字區塊 -->
@@ -1558,7 +1697,7 @@
             </div>
             <div class="spec-col spec-mid">
               <div class="spec-tag">🗣️ 暗示規則</div>
-              <div class="spec-mid-hint">口頭舉例形容<br>禁說數字<br>由小 ➔ 排到大</div>
+              <div class="spec-mid-hint">口頭舉例<br>禁說數字<br>小 ➔ 大</div>
             </div>
             <div class="spec-col spec-high">
               <div class="spec-tag">最大端 100</div>
@@ -1569,17 +1708,17 @@
           ${
             amIn && myNum !== undefined
               ? `<div class="peek-card" onclick="this.classList.toggle('revealed')">
-                  <span class="peek-hint">🙈 點擊翻開／蓋住你的秘密數字卡（僅你自己可見）</span>
+                  <span class="peek-hint">🙈 點擊查看／蓋回秘密數字（僅自己可見）</span>
                   <span class="peek-secret">你的秘密數字：<b>${myNum}</b></span>
                 </div>`
-              : `<div class="muted-xs" style="text-align:center;margin:6px 0;">🙈 選手各自的秘密數字將於鎖定順序翻牌時同步揭曉！</div>`
+              : `<div class="muted-xs" style="text-align:center;margin:6px 0;">🙈 翻牌時同步揭曉全員數字</div>`
           }
 
           <div class="sub-label" style="margin-top:10px;">
             ${
               isHost || gs.revealed
-                ? "👇 討論完後，由小排到大調整順序並開牌："
-                : `👇 目前暫定順序（請口頭討論，由桌長【${esc(playerMap[table.host_id]?.name || table.participants.find((x) => x.id === table.host_id)?.name || "桌長")}】調整順序並開牌）：`
+                ? "👇 由小排到大調整順序："
+                : `👇 暫定順序（討論後由桌長【${esc(hostName)}】排序翻牌）：`
             }
           </div>
           <div class="ito-order-list">
@@ -1591,21 +1730,24 @@
                 const botHintVal = isBot
                   ? Math.max(2, Math.min(99, (secretMap[pid] || 50) + (idx % 2 === 0 ? 3 : -3)))
                   : 0;
-                return `<div class="ito-row">
-                  <span>第 ${idx + 1} 小：<b>${esc(pl.name)}</b> ${
-                    gs.revealed
-                      ? `➜ 🎯 <b>${secretMap[pid]}</b>`
-                      : isBot
-                      ? `<small class="muted-xs">（🤖暗示：體感大約 ${botHintVal} 分左右）</small>`
-                      : ""
-                  }</span>
+                return `<div class="ito-row ito-row-grid">
+                  <span class="cb-block-mid st-cyan">#${idx + 1} 小</span>
+                  <div class="cb-cell-main" title="${esc(pl.name)}">
+                    ${esc(pl.name)}${
+                      !gs.revealed && isBot
+                        ? ` <small class="muted-xs">(🤖約${botHintVal})</small>`
+                        : ""
+                    }
+                  </div>
                   ${
-                    isHost && !gs.revealed
-                      ? `<span>
+                    gs.revealed
+                      ? `<span class="cb-block-stat st-gold">🎯 ${secretMap[pid]}</span>`
+                      : isHost
+                      ? `<span style="display:inline-flex;gap:4px;flex-shrink:0;">
                           <button class="btn-icon" ${idx === 0 ? "disabled" : ""} onclick="PartyGamesUI.moveIto('${table.id}', ${idx}, -1)">⬆️</button>
                           <button class="btn-icon" ${idx === order.length - 1 ? "disabled" : ""} onclick="PartyGamesUI.moveIto('${table.id}', ${idx}, 1)">⬇️</button>
                         </span>`
-                      : ""
+                      : `<span class="cb-block-stat st-wait">待翻牌</span>`
                   }
                 </div>`;
               })
@@ -1613,9 +1755,9 @@
           </div>
           ${
             isHost && !gs.revealed
-              ? `<button class="btn btn-gold" style="width:100%;margin-top:10px;" onclick="PartyGamesUI.revealIto('${table.id}')">🃏 鎖定順序・全員翻牌開獎！</button>`
+              ? `<button class="btn btn-gold" style="width:100%;margin-top:10px;" onclick="PartyGamesUI.revealIto('${table.id}')">🃏 鎖定順序・翻牌開獎！</button>`
               : !gs.revealed
-              ? `<div class="muted-xs" style="text-align:center;margin-top:8px;color:#fcd34d;">👑 等待桌長 <b>${esc(playerMap[table.host_id]?.name || table.participants.find((x) => x.id === table.host_id)?.name || "桌長")}</b> 確認最終順序並按下翻牌開獎…</div>`
+              ? `<div class="muted-xs" style="text-align:center;margin-top:8px;color:#fcd34d;">👑 等待桌長 <b>${esc(hostName)}</b> 確認順序並翻牌…</div>`
               : ""
           }
         </div>
@@ -1630,7 +1772,43 @@
         .trim();
     },
 
-    // ==================== 6. ⏱️ 8 秒不詞窮（極簡秒讀題卡 ＋ 8.0 秒倒數 ＋ 3人以上共識投票 ＋ 平票算輸！） ====================
+    ensureFiveSecTicker() {
+      if (this._fiveSecInterval) return;
+      this._fiveSecInterval = setInterval(() => {
+        const nodes = document.querySelectorAll(".fs-live-timer");
+        if (!nodes.length) {
+          clearInterval(this._fiveSecInterval);
+          this._fiveSecInterval = null;
+          return;
+        }
+        const now = window.PartyDB.serverNowMs;
+        let anyExpiredJustNow = false;
+        nodes.forEach((el) => {
+          const st = Number(el.getAttribute("data-started") || 0);
+          if (!st) return;
+          const rem = Math.min(8.0, Math.max(0, (8000 - (now - st)) / 1000));
+          if (rem <= 0) {
+            if (!el.classList.contains("time-up")) {
+              el.classList.add("time-up");
+              anyExpiredJustNow = true;
+            }
+            if (el.textContent !== "⏰ 8 秒時間到！") {
+              el.textContent = "⏰ 8 秒時間到！";
+            }
+          } else {
+            el.classList.remove("time-up");
+            const txt = `${rem.toFixed(1)} 秒`;
+            if (el.textContent !== txt) el.textContent = txt;
+          }
+        });
+        if (anyExpiredJustNow) {
+          window.PartyFX.playTone("fire");
+          window.PartyFX.haptic("heavy");
+        }
+      }, 60);
+    },
+
+    // ==================== 6. ⏱️ 8 秒不詞窮（極簡秒讀題卡 ＋ 雲端標準時鐘同步 8.0 秒倒數 ＋ 3人以上共識投票！） ====================
     renderFiveSeconds(table, gs, me, amIn, playerMap) {
       const ctx = window.PartyApp.getContext();
       const parts = table.participants;
@@ -1646,18 +1824,11 @@
       const curPrompt = this.cleanFiveSecPrompt(rawPrompt) || String(rawPrompt);
       const startedAt = gs.turnStartedAt || 0;
       const remain = startedAt
-        ? Math.max(0, (8000 - (window.PartyDB.serverNowMs - startedAt)) / 1000)
+        ? Math.min(8.0, Math.max(0, (8000 - (window.PartyDB.serverNowMs - startedAt)) / 1000))
         : 8.0;
 
-      if (startedAt && remain > 0 && !this.fiveSecTimer) {
-        this.fiveSecTimer = setTimeout(() => {
-          this.fiveSecTimer = null;
-          if (window.PartyDB.serverNowMs - startedAt >= 8000) {
-            window.PartyFX.playTone("fire");
-            window.PartyFX.haptic("heavy");
-          }
-          window.PartyApp.render();
-        }, 150);
+      if (startedAt && remain > 0) {
+        this.ensureFiveSecTicker();
       }
 
       const humanOpponents = activeParts.filter(
@@ -1678,57 +1849,79 @@
         (curPlayer.id !== me.id ||
           activeParts.every((p) => p.id === me.id || String(p.id).startsWith("bot_")));
 
+      const fsGridCls =
+        parts.length <= 2 ? "cb-grid-2" : parts.length === 3 ? "cb-grid-3" : "cb-grid-4";
+
       return `
         <div class="mini-game-box">
-          <div class="ss-top">
+          <div class="ss-top" style="margin-bottom:6px;">
             <span class="badge-pill">第 ${Math.floor(turn / parts.length) + 1}/3 輪</span>
-            <span class="gold-text">${parts.map((p) => `${esc(p.name)}:${scores[p.id] || 0}`).join(" ｜ ")}</span>
+            <span class="muted-xs">🎙️ 8 秒內講滿 3 個</span>
+          </div>
+          <div class="${fsGridCls}" style="margin-bottom:8px;">
+            ${parts
+              .map((p) => {
+                const isChal = p.id === curPlayer.id;
+                const voted = voteMap[p.id] !== undefined;
+                const isBot = String(p.id).startsWith("bot_");
+                let stCls = "st-wait";
+                let stTxt = p.forfeited ? "🏳️ 棄權" : "⏳ 待命";
+                if (isChal) {
+                  stCls = "st-gold";
+                  stTxt = "🎙️ 挑戰者";
+                } else if (startedAt && useConsensus && !isBot && !p.forfeited) {
+                  stCls = voted ? "st-ready" : "st-wait";
+                  stTxt = voted ? "✅ 已投票" : "⏳ 評分中";
+                }
+                return `<div class="cb-player-card ${isChal ? "is-active" : ""} ${p.id === me.id ? "is-me" : ""}">
+                  <div class="cb-name" title="${esc(p.name)}">${esc(p.name)}</div>
+                  <div class="cb-metric">${scores[p.id] || 0} <small style="font-size:11px;color:#94a3b8;">分</small></div>
+                  <div class="cb-status ${stCls}">${stTxt}</div>
+                </div>`;
+              })
+              .join("")}
           </div>
           ${
             gs.lastJudge && gs.lastJudge.summary
-              ? `<div class="toast-inline" style="margin-top:6px;font-size:12px;">${esc(gs.lastJudge.summary)}</div>`
+              ? `<div class="toast-inline" style="margin-bottom:8px;font-size:12px;">${esc(gs.lastJudge.summary)}</div>`
               : ""
           }
-          <div style="text-align:center;margin:8px 0;">
-            挑戰者：<b style="font-size:18px;color:#fbbf24;">${esc(curPlayer.name)}</b>
-            <span class="muted-xs" style="margin-left:6px;">（🎙️ 規則：8 秒內講滿 3 個）</span>
-          </div>
           ${
             !startedAt
               ? amIn && curPlayer.id === me.id
-                ? `<button class="btn btn-gold" style="width:100%;" onclick="PartyGamesUI.startFiveSecTurn('${table.id}')">🎙️ 翻開題目並啟動 8.0 秒倒數！</button>`
-                : `<div class="muted-sm" style="text-align:center;">等待 ${esc(curPlayer.name)} 按下翻牌啟動 8.0 秒倒數…</div>`
+                ? `<button class="btn btn-gold" style="width:100%;" onclick="PartyGamesUI.startFiveSecTurn('${table.id}')">🎙️ 翻開題目・啟動 8.0 秒倒數！</button>`
+                : `<div class="muted-sm" style="text-align:center;">等待 <b>${esc(curPlayer.name)}</b> 翻牌啟動 8.0 秒倒數…</div>`
               : `<div class="fs-topic-card">
                    <div class="fs-topic-rule">🎙️ 8 秒內講出 3 個：</div>
                    <div class="fs-topic-main">${esc(curPrompt)}</div>
                  </div>
-                 <div class="timer-giant ${remain <= 0 ? "time-up" : ""}">${remain <= 0 ? "⏰ 8 秒時間到！" : `${remain.toFixed(1)} 秒`}</div>
+                 <div class="timer-giant fs-live-timer ${remain <= 0 ? "time-up" : ""}" data-started="${startedAt}">${remain <= 0 ? "⏰ 8 秒時間到！" : `${remain.toFixed(1)} 秒`}</div>
                  ${
                    useConsensus
                      ? `<div style="margin-top:8px;">
                           <div class="muted-xs" style="text-align:center;margin-bottom:6px;color:#fcd34d;">
-                            🗳️ 對手共識決投票（已投 ${votedCount}/${humanOpponents.length} 人｜過半投 ✅ 才得 1 分，平票算失敗 +0 分！）
+                            🗳️ 對手共識投票（${votedCount}/${humanOpponents.length} 已投｜過半 ✅ 得分，平票 +0）
                           </div>
                           ${
                             canVote
                               ? `<div class="grid-2-btns">
                                    <button class="btn ${myVote === true ? "btn-gold" : "btn-emerald"}" onclick="PartyGamesUI.voteFiveSec('${table.id}', ${turn}, true)">
-                                     ${myVote === true ? "☑️ " : "✅ "}成功講滿 3 個
+                                     ${myVote === true ? "☑️ " : "✅ "}講滿 3 個
                                    </button>
                                    <button class="btn ${myVote === false ? "btn-gold" : "btn-danger"}" onclick="PartyGamesUI.voteFiveSec('${table.id}', ${turn}, false)">
                                      ${myVote === false ? "☑️ " : "❌ "}卡詞／超時
                                    </button>
                                  </div>
-                                 ${myVote !== undefined ? `<div class="muted-xs" style="text-align:center;margin-top:4px;">✅ 已送出你的判定（其他對手投完前可改票）</div>` : ""}`
-                              : `<div class="muted-xs" style="text-align:center;">等待全體對手（${humanOpponents.map((p) => `${esc(p.name)}${voteMap[p.id] !== undefined ? "✅" : "⏳"}`).join("、")}）完成共識投票！</div>`
+                                 ${myVote !== undefined ? `<div class="muted-xs" style="text-align:center;margin-top:4px;">✅ 已送出判定（結算前可改票）</div>` : ""}`
+                              : `<div class="muted-xs" style="text-align:center;">等待對手完成投票（看上方色塊狀態）</div>`
                           }
                         </div>`
                      : canVote
                      ? `<div class="grid-2-btns" style="margin-top:8px;">
-                          <button class="btn btn-emerald" onclick="PartyGamesUI.judgeFiveSec('${table.id}', true)">✅ 成功講滿 3 個 (+1)</button>
+                          <button class="btn btn-emerald" onclick="PartyGamesUI.judgeFiveSec('${table.id}', true)">✅ 講滿 3 個 (+1)</button>
                           <button class="btn btn-danger" onclick="PartyGamesUI.judgeFiveSec('${table.id}', false)">❌ 卡詞／超時 (+0)</button>
                         </div>`
-                     : `<div class="muted-xs" style="text-align:center;">由對手判定是否於 8 秒內成功講出 3 個答案！</div>`
+                     : `<div class="muted-xs" style="text-align:center;">等待對手判定是否講滿 3 個</div>`
                  }`
           }
         </div>
@@ -1816,13 +2009,12 @@
 
       return `
         <details class="manual-settle-details" open>
-          <summary>🏆 電玩派對比賽結束：點選本局贏家（可複選多位並列第 1！）</summary>
-          <div class="muted-xs" style="margin-top:6px;">點選 1 位獨得冠軍榮譽分；若多人同分並列第 1 可同時勾選多位均分：</div>
+          <summary>🏆 完賽勾選本局贏家（可複選並列第 1）</summary>
           <div class="cheer-btn-grid" style="margin-top:8px;">
             ${activeParts
               .map((p) => {
                 const sel = pickedSet.has(p.id);
-                return `<button type="button" class="btn ${sel ? "btn-gold" : "btn-secondary"} btn-sm" onclick="PartyGamesUI.toggleSwitchWinner('${table.id}', '${esc(p.id)}')">
+                return `<button type="button" class="btn ${sel ? "btn-gold" : "btn-secondary"} btn-sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" onclick="PartyGamesUI.toggleSwitchWinner('${table.id}', '${esc(p.id)}')">
                   ${sel ? "☑️ " : "⬜ "}🏆 ${esc(p.name)}
                 </button>`;
               })
@@ -1831,12 +2023,12 @@
           <button type="button" class="btn btn-gold" style="width:100%;margin-top:10px;" ${pickedSet.size === 0 ? "disabled" : ""} onclick="PartyGamesUI.submitSwitchWinners('${table.id}')">
             ${
               pickedSet.size === 0
-                ? "請先點選上方獲勝贏家"
+                ? "請點選獲勝贏家"
                 : allSelectedAsTie
-                ? "⚖️ 全員並列平手（送出確認平手完賽）"
+                ? "⚖️ 全員並列平手完賽"
                 : table.is_test_run
-                ? `🏆 送出 ${pickedSet.size} 位贏家完賽 (練習局0分)`
-                : `🏆 送出 ${pickedSet.size} 位贏家請對手確認（每人 +${perWinShare} PT）`
+                ? `🏆 送出 ${pickedSet.size} 位贏家 (0分)`
+                : `🏆 送出 ${pickedSet.size} 位贏家請對手確認（+${perWinShare} PT）`
             }
           </button>
         </details>
@@ -3258,11 +3450,19 @@
     // --- 8 秒不詞窮（8.0 秒倒數 ＋ 3人以上共識投票 ＋ 平手算輸！） ---
     async startFiveSecTurn(tableId) {
       return window.PartyDB.withLock(`fs_start_${tableId}`, async () => {
+        // 預留 250ms 雲端推播同步緩衝（搭配 Firebase .sv:timestamp 標準時鐘校準，讓雙方手機從 8.0 秒整齊同步起跑！）
+        const targetStartMs = window.PartyDB.serverNowMs + 250;
+        const ctx = window.PartyApp.getContext();
+        const localTbl = (ctx?.tables || []).find((t) => t.id === tableId);
+        if (localTbl && localTbl.status === "playing" && !(localTbl.game_state || {}).turnStartedAt) {
+          localTbl.game_state = { ...(localTbl.game_state || {}), turnStartedAt: targetStartMs };
+          window.PartyApp.render();
+        }
         await window.PartyDB.transactRow("tables", tableId, (cur) => {
           if (!cur || cur.status !== "playing") return undefined;
           const gs = { ...(cur.game_state || {}) };
           if (gs.turnStartedAt) return undefined;
-          gs.turnStartedAt = window.PartyDB.serverNowMs;
+          gs.turnStartedAt = targetStartMs;
           cur.game_state = gs;
           return cur;
         });
@@ -3493,10 +3693,30 @@
     },
 
     async forfeitTable(tableId) {
+      const initCtx = window.PartyApp.getContext();
+      if (!initCtx?.me) return;
+      const myId = initCtx.me.id;
+
+      // ⚡ 樂觀即時退房（0 延遲秒關遊戲視窗，不讓玩家乾等雲端多次來回！）
+      if (this.activeRoomTableId === tableId) this.activeRoomTableId = null;
+      this.minimizedRoomIds.add(tableId);
+      this.dismissedFinishedIds.add(tableId);
+      this.clearLocalDraw(tableId);
+      delete this.blindStopwatchStart[tableId];
+      const localTbl = (initCtx.tables || []).find((t) => t.id === tableId);
+      if (localTbl && Array.isArray(localTbl.participants)) {
+        localTbl.participants = localTbl.participants.map((p) =>
+          p.id === myId ? { ...p, forfeited: true } : p
+        );
+      }
+      document.getElementById("game-room-overlay")?.classList.add("hidden");
+      window.PartyFX.haptic("medium");
+      window.PartyApp.render();
+      window.PartyApp.toast("🏳️ 你已棄權離場，可以回大廳開新局囉！");
+
       return window.PartyDB.withLock(`forfeit_${tableId}`, async () => {
         const ctx = window.PartyApp.getContext();
         if (!ctx.me) return;
-        const myId = ctx.me.id;
         let finishWinners = null;
 
         const tx = await window.PartyDB.transactRow("tables", tableId, (cur) => {
@@ -3556,10 +3776,6 @@
           await window.PartyApp.refreshAll();
           return;
         }
-        if (this.activeRoomTableId === tableId) this.activeRoomTableId = null;
-        this.clearLocalDraw(tableId);
-        delete this.blindStopwatchStart[tableId];
-        window.PartyFX.haptic("medium");
 
         const snap = tx.snapshot;
         if (!finishWinners && snap.game_type === "quick_draw") {
@@ -3567,7 +3783,6 @@
           const active = (snap.participants || []).filter((p) => !p.forfeited);
           if (active.length > 0 && active.every((p) => times[p.id] !== undefined)) {
             await this.resolveAndFinishQd(snap, (snap.game_state || {}).mode || "draw", times, ctx);
-            window.PartyApp.toast("🏳️ 你已棄權離場！");
             return;
           }
         }
@@ -3576,7 +3791,6 @@
         } else {
           await window.PartyApp.refreshAll();
         }
-        window.PartyApp.toast("🏳️ 你已棄權離場，可以回大廳開新局囉！");
       });
     },
   };

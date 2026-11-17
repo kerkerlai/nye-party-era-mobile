@@ -283,6 +283,8 @@
     switch (scene) {
       case "pre_event":
         return "🎮 暖身與行前準備";
+      case "pre_checkin":
+        return "⏳ 行前報到倒數";
       case "dining":
         return "🍽️ Dining 用餐社交時段";
       case "party":
