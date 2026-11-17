@@ -5,7 +5,7 @@
  *   - 盲榜個人原始積分與排名計算 ＋ 1/3 終局翻盤結算
  *   - 排程自動切換場景狀態機 (Auto-Scheduler)
  *   - 隱藏任務每日抽卡/重抽鎖定 ＋ 雙重認證(當事人+見證人)自動派分
- *   - Party Game 參賽(3次) vs 下注(3次)獨立上限 ＋ 雙邊對賭彩池結算
+ *   - Party Game 參賽(3次) vs 場邊應援預測(3次)獨立上限 ＋ 雙向預測積分池結算
  *   - 全自動里程碑徽章＆傳奇唯一王冠徽章(三順位平手判定)
  *   - 每日 08:00 低於 300 PT 自動補滿回血
  */
@@ -219,7 +219,7 @@
       };
     }
 
-    // 在第一段排程開始時間之前，自動處於「開賽前準備階段」，顯示網路遊戲倒數計時器並隱藏遊戲保留驚喜！
+    // 在第一段排程開始時間之前，自動處於「活動暖身與行前準備階段」（開放暖身練習大廳供體驗）
     if (slots.length > 0 && effectiveNowMs < slots[0].startMs) {
       return {
         scene: "pre_event",
@@ -282,7 +282,7 @@
   function sceneLabel(scene) {
     switch (scene) {
       case "pre_event":
-        return "⏳ 開賽前準備";
+        return "🎮 暖身與行前準備";
       case "dining":
         return "🍽️ Dining 用餐社交時段";
       case "party":
@@ -291,8 +291,8 @@
         return "🔥 限時加成 Party Game (+50%)";
       case "theme":
         return "🎪 主題遊戲全員集合";
-      case "red_packet":
-        return "🧧 跨年煙火 ＆ 簽到紅包";
+      case "nye_gift":
+        return "🎆 跨年煙火 ＆ 新年簽到禮";
       case "viewer":
         return "🏆 Viewer 終局結算模式";
       default:
@@ -336,7 +336,7 @@
       }
     });
 
-    // 統計透過隱藏任務／互助卡認證互動過的不同朋友
+    // 統計透過隱藏任務／互助卡認證互動過的不同朋友（含 approvals_snapshot 快照回退）
     const approvalsByClaim = {};
     (claimApprovals || []).forEach((ca) => {
       (approvalsByClaim[ca.claim_id] = approvalsByClaim[ca.claim_id] || []).push(ca.approver_id);
@@ -349,7 +349,11 @@
         interactions[a].add(c.target_id);
         interactions[c.target_id].add(a);
       }
-      (approvalsByClaim[c.id] || []).forEach((w) => {
+      const witnessList =
+        approvalsByClaim[c.id] && approvalsByClaim[c.id].length > 0
+          ? approvalsByClaim[c.id]
+          : (c.approvals_snapshot || []).map((s) => s.approver_id);
+      witnessList.forEach((w) => {
         if (interactions[w] && w !== a) {
           interactions[a].add(w);
           interactions[w].add(a);
@@ -433,9 +437,9 @@
   }
 
   /**
-   * 統計某玩家今日在指定 Party Game 的「計分參賽次數」與「場邊下注次數」（排除新手測試局 is_test_run）
+   * 統計某玩家今日在指定 Party Game 的「計分參賽次數」與「場邊應援預測次數」（排除新手測試局 is_test_run）
    */
-  function getDailyGameUsage(playerId, gameType, dayKey, tables, bets) {
+  function getDailyGameUsage(playerId, gameType, dayKey, tables, cheers) {
     let playCount = 0;
     (tables || []).forEach((t) => {
       if (t.is_test_run) return;
@@ -445,13 +449,13 @@
       if (me && me.isScoring) playCount += 1;
     });
 
-    let betCount = 0;
-    (bets || []).forEach((b) => {
-      if (b.day_key !== dayKey || b.game_type !== gameType) return;
-      if (b.bettor_id === playerId) betCount += 1;
+    let cheerCount = 0;
+    (cheers || []).forEach((c) => {
+      if (c.day_key !== dayKey || c.game_type !== gameType) return;
+      if (c.supporter_id === playerId) cheerCount += 1;
     });
 
-    return { playCount, betCount };
+    return { playCount, cheerCount };
   }
 
   /**
@@ -464,7 +468,7 @@
     }
     let used = 0;
     (tables || []).forEach((t) => {
-      if (!t.is_test_run || t.status === "cancelled" || t.game_type !== gameType) return;
+      if (!t.is_test_run || t.is_warmup || t.status === "cancelled" || t.game_type !== gameType) return;
       const inRoom =
         t.host_id === playerId ||
         (t.participants || []).some((p) => p.id === playerId && !p.forfeited);
@@ -489,7 +493,7 @@
   /**
    *  awarding idempotent ledger + badge helper
    */
-  async function awardBadgeOnce(badgeId, badgeCode, playerId, points, title, detail, dayKey) {
+  async function awardBadgeOnce(badgeId, badgeCode, playerId, points, title, detail, dayKey, extraMeta = null) {
     const inserted = await window.PartyDB.upsert(
       "badges_awarded",
       [
@@ -500,48 +504,60 @@
           points,
           title,
           detail,
+          day_key: dayKey || "2026-12-31",
         },
       ],
       { ignoreDuplicates: true }
     );
-    if (inserted && inserted.length > 0) {
-      await window.PartyDB.upsert(
-        "ledger",
-        [
-          {
-            id: `badge_${badgeId}`,
-            player_id: playerId,
-            delta: points,
-            category: "badge",
-            reason: `🎖️ 解鎖徽章【${title}】`,
-            day_key: dayKey || "2026-12-31",
-            meta: { badgeCode, detail },
-          },
-        ],
-        { ignoreDuplicates: true }
-      );
-      return true;
-    }
-    return false;
+    const meta = extraMeta && typeof extraMeta === "object"
+      ? { badgeCode, detail, ...extraMeta }
+      : { badgeCode, detail };
+    const ledgerIns = await window.PartyDB.upsert(
+      "ledger",
+      [
+        {
+          id: `badge_${badgeId}`,
+          player_id: playerId,
+          delta: points,
+          category: "badge",
+          reason: `🎖️ 解鎖徽章【${title}】`,
+          day_key: dayKey || "2026-12-31",
+          meta,
+        },
+      ],
+      { ignoreDuplicates: true }
+    );
+    return Boolean((inserted && inserted.length > 0) || (ledgerIns && ledgerIns.length > 0));
   }
 
   /**
    * 即時檢查並自動頒發「遊戲里程碑 / 歡樂互助章」(100% 自動、免投票)
    */
   async function evaluateRealtimeAutoBadges(snapshot) {
-    const { players, tables, bets, claims, claimApprovals, badgesAwarded, globalCfg } = snapshot;
+    const { players, tables, cheers, claims, claimApprovals, badgesAwarded, globalCfg } = snapshot;
     const dayKey = (globalCfg && globalCfg.activeDayKey) || "2026-12-31";
     const existingIds = new Set((badgesAwarded || []).map((b) => b.id));
     const totalPlayers = (players || []).length;
     let awardedAny = false;
 
-    // 1. 🚀 破冰先鋒：當日第一個完賽正式賽桌的桌長 (+25 PT，排除新手測試局)
+    // 1. 🚀 破冰先鋒：當日第一個完賽正式賽桌的桌長 (+25 PT，排除測試局與桌長棄權局，依實際完賽時間 finished_at 唯一判定)
+    const pioneerAlreadyToday = (badgesAwarded || []).some(
+      (b) => b.badge_code === "fun_pioneer" && (b.day_key === dayKey || String(b.id).startsWith(`fun_pioneer_${dayKey}`))
+    );
     const finishedToday = (tables || [])
-      .filter((t) => t.status === "finished" && !t.is_test_run && t.day_key === dayKey)
-      .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
-    if (finishedToday.length > 0) {
+      .filter((t) => {
+        if (t.status !== "finished" || t.is_test_run || t.day_key !== dayKey || !t.host_id) return false;
+        const hostEntry = (t.participants || []).find((p) => p.id === t.host_id);
+        return !(hostEntry && hostEntry.forfeited);
+      })
+      .sort((a, b) =>
+        String(a.finished_at || a.updated_at || a.created_at).localeCompare(
+          String(b.finished_at || b.updated_at || b.created_at)
+        )
+      );
+    if (!pioneerAlreadyToday && finishedToday.length > 0) {
       const firstHost = finishedToday[0].host_id;
-      const bid = `fun_pioneer_${dayKey}_${firstHost}`;
+      const bid = `fun_pioneer_${dayKey}`;
       if (!existingIds.has(bid)) {
         if (await awardBadgeOnce(
           bid,
@@ -586,19 +602,19 @@
       }
     }
 
-    // 3. 🕯️ 反指標冥燈：場邊下注連續猜錯 5 把 (+25 PT)
-    const betsByPlayer = {};
-    (bets || [])
-      .filter((b) => b.status === "won" || b.status === "lost")
+    // 3. 🕯️ 反指標冥燈：場邊應援預測連續未中 5 次 (+25 PT)
+    const cheersByPlayer = {};
+    (cheers || [])
+      .filter((c) => c.status === "won" || c.status === "lost")
       .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
-      .forEach((b) => {
-        (betsByPlayer[b.bettor_id] = betsByPlayer[b.bettor_id] || []).push(b);
+      .forEach((c) => {
+        (cheersByPlayer[c.supporter_id] = cheersByPlayer[c.supporter_id] || []).push(c);
       });
-    for (const [pid, list] of Object.entries(betsByPlayer)) {
+    for (const [pid, list] of Object.entries(cheersByPlayer)) {
       let streak = 0;
       let hit5 = false;
-      for (const b of list) {
-        if (b.status === "lost") {
+      for (const c of list) {
+        if (c.status === "lost") {
           streak += 1;
           if (streak >= 5) hit5 = true;
         } else {
@@ -614,22 +630,41 @@
             pid,
             25,
             "反指標冥燈",
-            "場邊下注達成連輸 5 把回血補貼",
+            "場邊應援預測連續未中 5 次鼓勵補貼",
             dayKey
           )) awardedAny = true;
         }
       }
     }
 
-    // 4. ⚖️ 最佳公證人：擔任見證人累計滿 5 次 (+25 PT)
-    const approvedClaimSet = new Set(
-      (claims || []).filter((c) => c.status === "approved").map((c) => c.id)
-    );
+    // 4. ⚖️ 最佳公證人：擔任見證人累計滿 5 次 (+25 PT，含 approvals_snapshot 快照回退防漏計)
+    const approvedClaims = (claims || []).filter((c) => c.status === "approved");
+    const approvedClaimMap = {};
+    approvedClaims.forEach((c) => {
+      approvedClaimMap[c.id] = c;
+    });
+    const seenApprovalPair = new Set();
     const witnessCount = {};
     (claimApprovals || []).forEach((ca) => {
-      if (approvedClaimSet.has(ca.claim_id) && ca.role !== "target") {
-        witnessCount[ca.approver_id] = (witnessCount[ca.approver_id] || 0) + 1;
+      const clm = approvedClaimMap[ca.claim_id];
+      if (clm && ca.role !== "target" && ca.approver_id !== clm.target_id && ca.approver_id !== clm.applicant_id) {
+        const pairKey = `${ca.claim_id}::${ca.approver_id}`;
+        if (!seenApprovalPair.has(pairKey)) {
+          seenApprovalPair.add(pairKey);
+          witnessCount[ca.approver_id] = (witnessCount[ca.approver_id] || 0) + 1;
+        }
       }
+    });
+    approvedClaims.forEach((c) => {
+      (c.approvals_snapshot || []).forEach((s) => {
+        if (s.role !== "target" && s.approver_id !== c.target_id && s.approver_id !== c.applicant_id) {
+          const pairKey = `${c.id}::${s.approver_id}`;
+          if (!seenApprovalPair.has(pairKey)) {
+            seenApprovalPair.add(pairKey);
+            witnessCount[s.approver_id] = (witnessCount[s.approver_id] || 0) + 1;
+          }
+        }
+      });
     });
     for (const [pid, cnt] of Object.entries(witnessCount)) {
       if (cnt >= 5) {
@@ -663,169 +698,225 @@
   }
 
   /**
-   * Party Game 賽桌結算：
-   *  1. 滿 3 次之陪玩選手 (isScoring === false)：全程 0 扣分、0 得分（純陪玩同樂）！
+   * Party Game 賽桌結算（100% 純正向團康榮譽加分制 — 免門票、零倒扣、純榮譽累加！）：
+   *  1. 滿 3 次之陪玩選手 (isScoring === false)：全程 0 分（純陪玩同樂）！
    *  2. 未滿 3 次之計分選手 (isScoring === true)：
-   *     - 開賽押本金 -stake (-20 PT)
-   *     - 若贏得比賽：依本桌完整參賽規模 (participants.length × stake × (1 + hhRate) / 總贏家人數) 正常領取應得獎金！
-   *     - 若輸掉比賽（即使輸給純陪玩選手）：不退回本金，正常失分 (-20 PT)！
-   *  3. 場邊雙邊對賭彩池：若全押同一邊無對家，或無人猜中，全額退還 10 PT 防洗分！
+   *     - 免費參賽不預扣任何積分
+   *     - 獲勝選手依本桌參賽規模領取正向勝利榮譽積分（Happy Hour 額外 ×1.5）
+   *     - 完賽未獲勝（且未棄權）之選手領取 +5 PT 完賽參與鼓勵分；平手和局每人領 +10 PT
+   *  3. 場邊免費應援預測：完全免費不扣分、不綁反方對家！預測命中本局贏家直接獲 +10 PT，未命中 0 PT（全員並列無勝負則標記 tie 不計勝負）！
    */
-  async function settlePartyTable(table, winnerIds, allBets, globalCfg) {
-    // 🧪 若為新手免費測試局 (is_test_run)，0 押注 0 派彩，直接標記完賽！
-    if (table.is_test_run) {
-      await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(table.id)}`, {
-        status: "finished",
-        winner_ids: winnerIds || [],
-        proposed_winners: null,
-      });
+  async function settlePartyTable(table, winnerIds, allCheers, globalCfg) {
+    const incomingWinList = Array.isArray(winnerIds) ? [...winnerIds] : [];
+
+    // 🔒 先用雲端 CAS 交易鎖原子搶下完賽權，避免雙機同毫秒結算互蓋或重複開獎！
+    const tx = await window.PartyDB.transactRow("tables", table.id, (cur) => {
+      if (!cur || cur.status === "finished" || cur.status === "cancelled") {
+        return undefined;
+      }
+      const mergedGs = { ...(cur.game_state || {}), ...(table.game_state || {}) };
+      const curParts = cur.participants || table.participants || [];
+      const activeParts = curParts.filter((p) => !p.forfeited);
+      let normalizedWinners = [...new Set(incomingWinList)];
+      // 防刷分保護：Switch 若把「場上全部在場選手」都勾為贏家，視同全員平手和局
+      if (
+        cur.game_type === "switch_free" &&
+        activeParts.length >= 2 &&
+        activeParts.every((p) => normalizedWinners.includes(p.id))
+      ) {
+        normalizedWinners = ["__pvp_tie__"];
+      }
+      cur.game_state = mergedGs;
+      cur.status = "finished";
+      cur.winner_ids = normalizedWinners;
+      cur.proposed_winners = null;
+      cur.finished_at = new Date().toISOString();
+      return cur;
+    });
+
+    const finalTable = tx.snapshot || table;
+    if (!tx.committed || !finalTable) {
       return;
     }
 
+    // 🧪 若為新手免費練習局 (is_test_run)，0 分完賽！
+    if (finalTable.is_test_run) {
+      return;
+    }
+
+    // 強制從雲端重抓最新該桌應援預測，確保開賽前最後 0.5 秒的預測 100% 計入！
+    let freshCheers = allCheers || [];
+    try {
+      const netCheers = await window.PartyDB.select(
+        "cheers",
+        `table_id=eq.${encodeURIComponent(finalTable.id)}`,
+        { forceNetwork: true }
+      );
+      if (Array.isArray(netCheers)) freshCheers = netCheers;
+    } catch (_) {}
+
     const g = { ...CFG.DEFAULTS, ...(globalCfg || {}) };
-    const dayKey = table.day_key || g.activeDayKey;
-    const winSet = new Set(winnerIds || []);
-    const participants = table.participants || [];
+    const dayKey = finalTable.day_key || g.activeDayKey;
+    const winSet = new Set(finalTable.winner_ids || incomingWinList || []);
+    const participants = finalTable.participants || [];
     const scoringPlayers = participants.filter((p) => p.isScoring);
     const actualWinners = participants.filter((p) => winSet.has(p.id));
     const scoringWinners = actualWinners.filter((p) => p.isScoring);
 
-    const stake = Number(table.stake) || g.partyPlayStake || 20;
-    const hhRate = table.is_happy_hour ? Number(g.happyHourBonusRate) || 0.5 : 0;
+    const unitPts = Number(finalTable.entry_pts) || Number(g.partyEntryPts) || 15;
+    const partPts = Number(g.partyPartPts) ?? 5;
+    const tiePts = Number(g.partyTiePts) ?? 10;
+    const cheerBonus = Number(finalTable.cheer_pts) || Number(g.partyCheerPts) || 10;
+    const hhRate = finalTable.is_happy_hour ? Number(g.happyHourBonusRate) || 0.5 : 0;
+    const hhMult = 1 + hhRate;
     const ledgerBatch = [];
 
-    // 選手獎金派發（僅對 isScoring 選手發放；陪玩選手輸贏皆 0 分；落敗或中途棄權之選手不退本金！）
+    // 選手正向榮譽積分發放（僅對 isScoring 選手發放；陪玩選手輸贏皆 0 分；全程無任何負分扣款！）
     if (scoringPlayers.length > 0) {
       if (winSet.has("__pvp_tie__")) {
-        // 平手和局：全額退還「未棄權」計分參賽者本金
         for (const sp of scoringPlayers.filter((p) => !p.forfeited)) {
-          ledgerBatch.push({
-            id: `table_tie_refund_${table.id}_${sp.id}`,
-            player_id: sp.id,
-            delta: stake,
-            category: "bet_refund",
-            reason: `⚖️ 賽桌平手退回本金【${table.title}】`,
-            day_key: dayKey,
-            meta: { tableId: table.id },
-          });
+          if (tiePts > 0) {
+            ledgerBatch.push({
+              id: `table_tie_${finalTable.id}_${sp.id}`,
+              player_id: sp.id,
+              delta: tiePts,
+              category: "party_win",
+              reason: `⚖️ 賽桌平手完賽獎勵【${finalTable.title}】`,
+              day_key: dayKey,
+              meta: { tableId: finalTable.id, gameType: finalTable.game_type },
+            });
+          }
         }
-      } else if (scoringWinners.length > 0 && !winSet.has("__coop_fail__")) {
-        const isItoCoop = table.game_type === "ito_numbers";
-        const isSoulCoop2 = table.game_type === "soul_sync_2v2" && participants.length === 2;
+      } else {
+        const isItoCoop = finalTable.game_type === "ito_numbers";
+        const isSoulCoop2 = finalTable.game_type === "soul_sync_2v2" && participants.length === 2;
+        const winnerIdSet = new Set(
+          !winSet.has("__coop_fail__") ? scoringWinners.map((w) => w.id) : []
+        );
 
-        if (isItoCoop) {
-          // 🔢 ito 3~8 人合作過關階梯獎金 (+20 / +30 / +45 / +60 / +80 / +100，Happy Hour 獎金再 +50%)
-          const pCnt = participants.length;
-          const baseNet = getItoBaseNetProfit(pCnt);
-          const finalNet = Math.round(baseNet * (1 + hhRate));
-          const payout = stake + finalNet;
-          for (const w of scoringWinners) {
-            ledgerBatch.push({
-              id: `table_win_${table.id}_${w.id}`,
-              player_id: w.id,
-              delta: payout,
-              category: "party_win",
-              reason: `🏆 ito ${pCnt}人合作過關【退回${stake}+獎金${finalNet} PT】`,
-              day_key: dayKey,
-              meta: { tableId: table.id, gameType: table.game_type },
-            });
+        if (!winSet.has("__coop_fail__") && scoringWinners.length > 0) {
+          if (isItoCoop) {
+            const pCnt = participants.length;
+            const baseNet = getItoBaseNetProfit(pCnt);
+            const reward = Math.round(baseNet * hhMult);
+            for (const w of scoringWinners) {
+              ledgerBatch.push({
+                id: `table_win_${finalTable.id}_${w.id}`,
+                player_id: w.id,
+                delta: reward,
+                category: "party_win",
+                reason: `🏆 ito ${pCnt}人合作過關獎勵【+${reward} PT】`,
+                day_key: dayKey,
+                meta: { tableId: finalTable.id, gameType: finalTable.game_type },
+              });
+            }
+          } else if (isSoulCoop2) {
+            const hits = Number(finalTable.game_state?.scores?.team_A) || 5;
+            const baseReward = hits >= 7 ? 40 : 25;
+            const reward = Math.round(baseReward * hhMult);
+            for (const w of scoringWinners) {
+              ledgerBatch.push({
+                id: `table_win_${finalTable.id}_${w.id}`,
+                player_id: w.id,
+                delta: reward,
+                category: "party_win",
+                reason: `💞 靈魂默契(${hits}/8題)${hits >= 7 ? "大滿貫" : "過關"}獎勵【+${reward} PT】`,
+                day_key: dayKey,
+                meta: { tableId: finalTable.id, gameType: finalTable.game_type },
+              });
+            }
+          } else {
+            const cappedCount = Math.min(8, Math.max(2, participants.length));
+            const baseHonorPool = Math.max(30, cappedCount * unitPts);
+            const totalHonorPool = Math.round(baseHonorPool * hhMult);
+            const winnerCount = Math.max(1, actualWinners.length);
+            const minPerWinner =
+              finalTable.game_type === "number_bomb" && participants.length === 3
+                ? Math.round(25 * hhMult)
+                : Math.round(20 * hhMult);
+            const perWinnerReward = Math.max(
+              minPerWinner,
+              Math.floor(totalHonorPool / winnerCount)
+            );
+            const shareNote = winnerCount > 1 ? `（${winnerCount}人並列獲勝）` : "";
+            for (const w of scoringWinners) {
+              ledgerBatch.push({
+                id: `table_win_${finalTable.id}_${w.id}`,
+                player_id: w.id,
+                delta: perWinnerReward,
+                category: "party_win",
+                reason: `🏆 賽桌奪冠獎勵【${finalTable.title}】${shareNote}${hhRate > 0 ? " (含限時加成!)" : ""}`,
+                day_key: dayKey,
+                meta: { tableId: finalTable.id, gameType: finalTable.game_type },
+              });
+            }
           }
-        } else if (isSoulCoop2) {
-          // 🤝 2v2 靈魂默契 (2人合作闖關)：5~6題獎金+20，7~8題大滿貫獎金+35 (Happy Hour 獎金再 +50%)
-          const hits = Number(table.game_state?.scores?.team_A) || 5;
-          const baseNet = hits >= 7 ? 35 : 20;
-          const finalNet = Math.round(baseNet * (1 + hhRate));
-          const payout = stake + finalNet;
-          for (const w of scoringWinners) {
-            ledgerBatch.push({
-              id: `table_win_${table.id}_${w.id}`,
-              player_id: w.id,
-              delta: payout,
-              category: "party_win",
-              reason: `💞 靈魂默契(${hits}/8題)${hits >= 7 ? "大滿貫" : "過關"}【退回${stake}+獎金${finalNet} PT】`,
-              day_key: dayKey,
-              meta: { tableId: table.id, gameType: table.game_type },
-            });
-          }
-        } else {
-          // PvP / 多人大亂鬥：以整桌參賽人數規模計算標準總獎金，平分給本局所有贏家
-          const fullBasePot = participants.length * stake;
-          const fullHhBonus = table.is_happy_hour ? Math.round(fullBasePot * hhRate) : 0;
-          const fullTablePot = fullBasePot + fullHhBonus;
-          const winnerCount = Math.max(1, actualWinners.length);
-          const perWinnerShare = Math.floor(fullTablePot / winnerCount);
-          for (const w of scoringWinners) {
-            ledgerBatch.push({
-              id: `table_win_${table.id}_${w.id}`,
-              player_id: w.id,
-              delta: perWinnerShare,
-              category: "party_win",
-              reason: `🏆 賽桌奪冠【${table.title}】${fullHhBonus > 0 ? " (含限時加成!)" : ""}`,
-              day_key: dayKey,
-              meta: { tableId: table.id, gameType: table.game_type },
-            });
+        }
+
+        // 完賽未獲勝（且未中途棄權）之計分選手發放完賽參與鼓勵分 (+5 PT)
+        if (partPts > 0) {
+          for (const sp of scoringPlayers) {
+            if (!sp.forfeited && !winnerIdSet.has(sp.id)) {
+              ledgerBatch.push({
+                id: `table_part_${finalTable.id}_${sp.id}`,
+                player_id: sp.id,
+                delta: partPts,
+                category: "party_play",
+                reason: `👏 賽桌完賽參與鼓勵【${finalTable.title}】`,
+                day_key: dayKey,
+                meta: { tableId: finalTable.id, gameType: finalTable.game_type },
+              });
+            }
           }
         }
       }
     }
 
-    // 場邊下注結算（雙邊對賭成立制！）
-    const tableBets = (allBets || []).filter(
-      (b) => b.table_id === table.id && b.status === "locked"
+    // 場邊免費應援預測結算（0 扣分、不需反方對家、猜中領固定 +10 PT 獎勵！）
+    const tableCheers = (freshCheers || []).filter(
+      (c) => c.table_id === finalTable.id && c.status === "locked"
     );
-    if (tableBets.length > 0) {
-      const distinctPicks = new Set(tableBets.map((b) => b.pick_key));
-      const winningBets = tableBets.filter((b) => isWinningBetPick(b.pick_key, winSet, table));
+    if (tableCheers.length > 0) {
+      const isTieMatch = winSet.has("__pvp_tie__");
+      const distinctPicks = new Set(tableCheers.map((c) => c.pick_key));
+      const winningCheers = isTieMatch
+        ? []
+        : tableCheers.filter((c) => isWinningCheerPick(c.pick_key, winSet, finalTable));
+      // 多贏家局防呆：若場上有 2 種以上不同預測，但每個預測的對象全都並列贏家（無未命中選項），視為平手不計勝負（refunded/tie）
+      const multiWinAllHit =
+        actualWinners.length > 1 &&
+        distinctPicks.size >= 2 &&
+        winningCheers.length === tableCheers.length;
 
-      if (distinctPicks.size < 2 || winningBets.length === 0) {
-        // 單邊無對家 或 全場無人猜中 -> 全額退還原注碼！
+      if (isTieMatch || multiWinAllHit) {
         await Promise.all(
-          tableBets.map((b) =>
-            window.PartyDB.update("bets", `id=eq.${encodeURIComponent(b.id)}`, {
+          tableCheers.map((c) =>
+            window.PartyDB.update("cheers", `id=eq.${encodeURIComponent(c.id)}`, {
               status: "refunded",
-              payout: b.amount,
+              reward_pts: 0,
             })
           )
         );
-        for (const b of tableBets) {
-          ledgerBatch.push({
-            id: `bet_refund_${b.id}`,
-            player_id: b.bettor_id,
-            delta: Number(b.amount) || 10,
-            category: "bet_refund",
-            reason:
-              distinctPicks.size < 2
-                ? `↩️ 場邊無人對賭退回押注【${table.title}】`
-                : `↩️ 場邊無人猜中退回押注【${table.title}】`,
-            day_key: dayKey,
-            meta: { tableId: table.id, betId: b.id },
-          });
-        }
       } else {
-        const totalPool = tableBets.reduce((acc, b) => acc + (Number(b.amount) || 10), 0);
-        const eachPayout = Math.floor(totalPool / winningBets.length);
         await Promise.all(
-          tableBets.map((b) => {
-            const won = winningBets.some((wb) => wb.id === b.id);
-            return window.PartyDB.update("bets", `id=eq.${encodeURIComponent(b.id)}`, {
+          tableCheers.map((c) => {
+            const won = winningCheers.some((wc) => wc.id === c.id);
+            return window.PartyDB.update("cheers", `id=eq.${encodeURIComponent(c.id)}`, {
               status: won ? "won" : "lost",
-              payout: won ? eachPayout : 0,
+              reward_pts: won ? cheerBonus : 0,
             });
           })
         );
-        for (const b of tableBets) {
-          const won = winningBets.some((wb) => wb.id === b.id);
-          if (won) {
-            ledgerBatch.push({
-              id: `bet_win_${b.id}`,
-              player_id: b.bettor_id,
-              delta: eachPayout,
-              category: "bet_payout",
-              reason: `💰 場邊押注命中獎金【${table.title}】`,
-              day_key: dayKey,
-              meta: { tableId: table.id, betId: b.id },
-            });
-          }
+        for (const wc of winningCheers) {
+          ledgerBatch.push({
+            id: `chr_win_${wc.id}`,
+            player_id: wc.supporter_id,
+            delta: cheerBonus,
+            category: "cheer_win",
+            reason: `📣 場邊應援預測命中獎勵【${finalTable.title}】`,
+            day_key: dayKey,
+            meta: { tableId: finalTable.id, cheerId: wc.id },
+          });
         }
       }
     }
@@ -833,14 +924,9 @@
     if (ledgerBatch.length > 0) {
       await window.PartyDB.upsert("ledger", ledgerBatch, { ignoreDuplicates: true });
     }
-
-    await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(table.id)}`, {
-      status: "finished",
-      winner_ids: [...winSet],
-    });
   }
 
-  function isWinningBetPick(pickKey, winSet, table) {
+  function isWinningCheerPick(pickKey, winSet, table) {
     if (winSet.has("__pvp_tie__")) return false;
     if (winSet.has(pickKey)) return true;
     if (pickKey === "coop_pass" && !winSet.has("__coop_fail__") && winSet.size > 0) return true;
@@ -854,44 +940,41 @@
 
   /**
    * ☀️ 每日 08:00 早安刷新：
-   *  1. 所有積分 < 300 PT 的玩家自動無償補滿至 300 PT！
-   *  2. 更新 activeDayKey，為所有玩家發放新一天的 3 張隱藏任務（保留未審核 claims！）
+   *  更新 activeDayKey（重置每日 3 次參賽與 3 次免費預測額度），並為所有玩家發放新一天的 3 張隱藏任務！
    */
   async function executeDailyMorningRefresh(newDayKey, snapshot, opts = {}) {
-    const { players, ledger, tables, claims, claimApprovals, missions, questionBanks, globalCfg } =
-      snapshot;
-    const floor = Number((globalCfg && globalCfg.dailyFloorPoints) || 300);
-    const board = computeScoreboard(players, ledger, tables, claims, claimApprovals);
-
-    let toppedUpCount = 0;
-    for (const p of players || []) {
-      const cur = board.byId[p.id] ? board.byId[p.id].baseScore : 0;
-      if (cur < floor) {
-        const diff = floor - cur;
-        const res = await window.PartyDB.upsert(
-          "ledger",
-          [
-            {
-              id: `topup_${newDayKey}_${p.id}`,
-              player_id: p.id,
-              delta: diff,
-              category: "topup",
-              reason: `☀️ ${newDayKey} 早安低保補滿回 ${floor} PT (+${diff} PT)`,
-              day_key: newDayKey,
-              meta: { before: cur, after: floor },
-            },
-          ],
-          { ignoreDuplicates: true }
-        );
-        if (res && res.length) toppedUpCount += 1;
+    const baseCfg = snapshot.globalCfg || CFG.DEFAULTS;
+    const cfgTx = await window.PartyDB.transactRow("config", "global", (cur) => {
+      const curVal = (cur && cur.value) || baseCfg;
+      if (!opts.manual && curVal.activeDayKey && curVal.activeDayKey >= newDayKey) {
+        return undefined;
       }
+      const nextVal = {
+        ...CFG.DEFAULTS,
+        ...curVal,
+        activeDayKey: newDayKey,
+        manualDayOverride:
+          opts.manual !== undefined ? Boolean(opts.manual) : Boolean(curVal.manualDayOverride),
+      };
+      return { key: "global", value: nextVal };
+    });
+    if (!opts.manual && !cfgTx.committed) {
+      return { toppedUpCount: 0, skipped: true };
+    }
 
-      // 補發當日 3 張新隱藏任務（若該日尚未發過）
+    const [freshPlayers, freshClaims, freshMissions] = await Promise.all([
+      window.PartyDB.select("players", "order=joined_at.asc", { forceNetwork: true }).catch(() => snapshot.players || []),
+      window.PartyDB.select("claims", "", { forceNetwork: true }).catch(() => snapshot.claims || []),
+      window.PartyDB.select("missions", "", { forceNetwork: true }).catch(() => snapshot.missions || []),
+    ]);
+
+    const questionBanks = snapshot.questionBanks || window.DEFAULT_QUESTION_BANKS;
+    for (const p of freshPlayers || []) {
       const mid = `${p.id}_${newDayKey}`;
-      const already = (missions || []).find((m) => m.id === mid);
+      const already = (freshMissions || []).find((m) => m.id === mid);
       if (!already) {
-        const completedCardIds = (claims || [])
-          .filter((c) => c.applicant_id === p.id && c.claim_type === "hidden_mission" && c.mission_card_id)
+        const completedCardIds = (freshClaims || [])
+          .filter((c) => c.applicant_id === p.id && c.claim_type === "hidden_mission" && c.mission_card_id && c.status !== "rejected")
           .map((c) => c.mission_card_id);
         const cards = drawMissionCards(questionBanks, completedCardIds, 3);
         await window.PartyDB.upsert(
@@ -911,23 +994,16 @@
       }
     }
 
-    const updatedGlobal = {
-      ...(globalCfg || CFG.DEFAULTS),
-      activeDayKey: newDayKey,
-      manualDayOverride:
-        opts.manual !== undefined ? Boolean(opts.manual) : Boolean(globalCfg?.manualDayOverride),
-    };
-    await window.PartyDB.upsert("config", [{ key: "global", value: updatedGlobal }]);
-    return { toppedUpCount };
+    return { toppedUpCount: 0 };
   }
 
   /**
    * 🏆 1/3 終局一鍵結算（Freeze & Reveal）：
-   *  1. 自動統計並頒發 4 大【結算唯一王冠徽章 (+80 PT)】(含三順位平手判定：主數值 -> 互動人數廣度 -> 最早達成時間)
+   *  1. 自動統計並頒發 4 大【結算唯一王冠徽章 (+80 PT)】
    *  2. 將 seasonStatus 鎖定為 'settled'、sceneOverride 設為 'viewer'
    */
   async function executeFinalSettlement(snapshot) {
-    const { players, ledger, tables, bets, claims, claimApprovals, globalCfg, schedule } = snapshot;
+    const { players, ledger, tables, cheers, claims, claimApprovals, globalCfg, schedule } = snapshot;
     const preBoard = computeScoreboard(players, ledger, tables, claims, claimApprovals);
     const normSlots = getNormalizedSlots(schedule, globalCfg);
     const lastSlotDate = normSlots.length
@@ -935,22 +1011,13 @@
       : "2027-01-03";
     const dayKey = globalCfg?.activeDayKey || lastSlotDate;
 
-    // Helper: 依「1. 主指標高 -> 2. 互動廣度高 -> 3. 最早達成時間早」選出第 1 名(若完全並列則同獲獎)
+    // Helper: 選出最高指標第 1 名（主指標並列第一者全部共享王冠！）
     function pickCrownWinners(candidates) {
       const valid = candidates.filter((c) => c.metric > 0);
       if (!valid.length) return [];
-      valid.sort((a, b) => {
-        if (b.metric !== a.metric) return b.metric - a.metric;
-        if (b.breadth !== a.breadth) return b.breadth - a.breadth;
-        return String(a.lastAt || "").localeCompare(String(b.lastAt || ""));
-      });
+      valid.sort((a, b) => b.metric - a.metric);
       const top = valid[0];
-      return valid.filter(
-        (c) =>
-          c.metric === top.metric &&
-          c.breadth === top.breadth &&
-          String(c.lastAt || "") === String(top.lastAt || "")
-      );
+      return valid.filter((c) => c.metric === top.metric);
     }
 
     // 1. 👑 社交恐怖分子
@@ -993,7 +1060,6 @@
       breadth: 0,
       lastAt: "",
     }));
-    // 👑 Switch 大魔王：不限一般/限時加成時段，累積奪冠次數最高者獲得；最高並列則同獲
     for (const w of pickCrownWinners(switchCands)) {
       await awardBadgeOnce(
         `crown_switch_${w.id}`,
@@ -1006,24 +1072,24 @@
       );
     }
 
-    // 3. 👑 地下賭聖 (至少參與 3 場已開獎下注；若全場無人滿 3 場則放寬為至少 1 場以支援快速彩排)
+    // 3. 👑 神預言家 (至少參與 3 場已揭曉應援預測；若全場無人滿 3 場則放寬為至少 1 場以支援快速彩排)
     const resolvedByPlayer = {};
-    (bets || [])
-      .filter((b) => b.status === "won" || b.status === "lost")
-      .forEach((b) => {
-        const cur = resolvedByPlayer[b.bettor_id] || { won: 0, total: 0, lastAt: "" };
+    (cheers || [])
+      .filter((c) => c.status === "won" || c.status === "lost")
+      .forEach((c) => {
+        const cur = resolvedByPlayer[c.supporter_id] || { won: 0, total: 0, lastAt: "" };
         cur.total += 1;
-        if (b.status === "won") {
+        if (c.status === "won") {
           cur.won += 1;
-          cur.lastAt = b.created_at || "";
+          cur.lastAt = c.created_at || "";
         }
-        resolvedByPlayer[b.bettor_id] = cur;
+        resolvedByPlayer[c.supporter_id] = cur;
       });
     const has3 = Object.values(resolvedByPlayer).some((x) => x.total >= 3);
-    const minBets = has3 ? 3 : 1;
-    const betCands = (players || []).map((p) => {
+    const minCheers = has3 ? 3 : 1;
+    const prophetCands = (players || []).map((p) => {
       const st = resolvedByPlayer[p.id];
-      const rate = st && st.total >= minBets && st.won > 0 ? round1((st.won / st.total) * 100) : 0;
+      const rate = st && st.total >= minCheers && st.won > 0 ? round1((st.won / st.total) * 100) : 0;
       return {
         id: p.id,
         metric: rate,
@@ -1031,14 +1097,14 @@
         lastAt: st ? st.lastAt : "",
       };
     });
-    for (const w of pickCrownWinners(betCands)) {
+    for (const w of pickCrownWinners(prophetCands)) {
       await awardBadgeOnce(
-        `crown_bettor_${w.id}`,
-        "crown_bettor",
+        `crown_prophet_${w.id}`,
+        "crown_prophet",
         w.id,
         80,
-        "地下賭聖",
-        `場邊下注命中率 ${w.metric}% 第 1 名`,
+        "神預言家",
+        `場邊應援預測命中率 ${w.metric}% 第 1 名`,
         dayKey
       );
     }

@@ -1,6 +1,6 @@
 /**
  * 《跨年英雄紀元》7 大主題遊戲全員同步引擎 (themeGames.js)
- * GM 打開手機即可當 Host 開房，且系統採用「黑盒防破梗設計」讓 GM 自己也能一起下場猜謎抓鬼！
+ * GM 打開手機即可當 Host 開房，且系統採用「自動盲抽防破梗設計」讓 GM 自己也能一起下場猜謎抓鬼！
  */
 
 (function () {
@@ -55,23 +55,23 @@
       ],
       scoring: [
         "🎯 猜題玩家：與正解誤差 ±4 以內（正中紅心）+50 PT；誤差 ±5～10 得 +30 PT；誤差 ±11～18 得 +15 PT；超過 18 得 0 PT。",
-        "🎙️ 發訊員助攻獎：依全場猜進「誤差 ±15 以內」的人數比例獲得 round(50 × 命中人數 / 猜題總人數) PT（大家都聽懂最高拿滿 +50 PT）！"
+        "🎙️ 發訊員助攻獎：依房內猜進得分圈（誤差 ±18 以內）的人數比例獲得 round(50 × 命中人數 / 房內猜題總人數) PT（全員進圈拿滿 +50 PT）！"
       ]
     },
     {
       id: "undercover",
       icon: "🕵️",
       name: "誰是臥底",
-      sub: "動態配比平民／臥底／白板，黑盒發詞投票抓鬼 (+20~90 PT)",
+      sub: "動態配比平民／臥底／白板，自動盲抽發詞投票抓鬼 (+20~90 PT)",
       rules: [
-        "系統依入房人數黑盒發詞：平民拿相同詞、臥底拿相近詞、5人以上自動混入 1 名無詞「白板」（7~11人配 2臥底+1白板；12~14人配 3臥底+1白板），Host 也能一起抽牌下場抓鬼！",
-        "每輪從指定起始玩家順時針「各講一句話形容自己的詞」（禁講出詞面字眼、禁直接照抄別人描述），講完後全員手機投票處決最高票者（平票則補講重投）。",
+        "系統依入房人數自動隨機發詞：平民拿相同詞、臥底拿相近詞、5人以上自動混入 1 名無詞「白板」（7~11人配 2臥底+1白板；12~14人配 3臥底+1白板），Host 也能一起抽牌下場抓鬼！",
+        "每輪依畫面列出的發言順序「各講一句話形容自己的詞」（禁講出詞面字眼、禁直接照抄別人描述），講完後全員手機投票處決最高票者（平票則補講重投）。",
         "勝負條件：所有臥底與白板出局 ➜ 平民獲勝；若存活「臥底+白板人數 ≥ 存活平民人數」（或剩 2 人仍未抓完）➜ 內鬼陣營獲勝！"
       ],
       scoring: [
         "🛡️ 平民陣營獲勝：存活平民每人 +40 PT，中途出局平民躺贏 +20 PT。",
         "😈 內鬼陣營獲勝：存活臥底 +70 PT（出局臥底 +35 PT）、存活白板 +90 PT（出局白板 +30 PT）。",
-        "🎯 精準抓鬼獎：平民每一輪投票只要投中真正的臥底或白板，無論當輪誰出局，當下立即額外 +5 PT！"
+        "🎯 精準抓鬼獎：每輪正式處決開票時（平票重投不重複計），平民只要投中真正的臥底或白板，當下立即額外 +5 PT！"
       ],
       achievements: ["🕵️【影帝級臥底 +40 PT】：擔任臥底或白板，且內鬼陣營獲勝時仍「存活」即自動獲得！"]
     },
@@ -107,16 +107,16 @@
       ]
     },
     {
-      id: "nye_red_packet",
-      icon: "🧧",
-      name: "跨年煙火倒數 ＆ 簽到紅包",
-      sub: "全場手機依排程時間同步煙火倒數，歸零解鎖開運紅包 (+50 PT)",
+      id: "nye_checkin",
+      icon: "🎆",
+      name: "跨年煙火倒數 ＆ 新年簽到禮",
+      sub: "全場手機依排程時間同步煙火倒數，歸零解鎖新年簽到禮 (+50 PT)",
       rules: [
         "依排程設定之跨年倒數時段進入畫面，全場手機自動對時同步倒數迎接新年！",
-        "倒數歸零煙火綻放瞬間解鎖「🧧 領取新年簽到紅包」按鈕。"
+        "倒數歸零煙火綻放瞬間解鎖「🎉 領取新年開運簽到禮」按鈕。"
       ],
       scoring: [
-        "🧧 點擊領取紅包的在場每位夥伴，人人固定入帳新年開運禮 +50 PT（每人限領 1 次）！"
+        "🎉 點擊領取新年簽到禮的在場每位夥伴，人人固定入帳新年開運積分 +50 PT（每人限領 1 次）！"
       ]
     },
   ];
@@ -135,7 +135,10 @@
     _lastSyncedSlotId: "",
     localShareOwnerPick: "",
     localShareFactPick: -1,
+    editingShareStepKey: "",
+    shareRankScope: "all", // all | 2026 | 2027
     localSliderVal: 50,
+    editingWlStepKey: "",
     checkedFigKeys: new Set(),
     figurineTimerHandle: null,
     nyeTimerHandle: null,
@@ -145,7 +148,7 @@
       const evTitle = g.eventTitle || "跨年英雄紀元";
       const lbA = g.shareLabelA || "2026 回顧";
       const lbB = g.shareLabelB || "2027 展望";
-      const rpPts = Number(g.redPacketPoints) || 50;
+      const giftPts = Number(g.nyeGiftPoints) || 50;
       return THEME_LIST.map((item) => {
         if (item.id === "share_2026_2027") {
           return {
@@ -159,11 +162,11 @@
             ],
           };
         }
-        if (item.id === "nye_red_packet") {
+        if (item.id === "nye_checkin") {
           return {
             ...item,
-            sub: `全場手機依排程時間同步煙火倒數，歸零解鎖開運紅包 (+${rpPts} PT)`,
-            scoring: [`🧧 點擊領取紅包的在場每位夥伴，人人固定入帳新年開運禮 +${rpPts} PT（每人限領 1 次）！`],
+            sub: `全場手機依排程時間同步煙火倒數，歸零解鎖新年簽到禮 (+${giftPts} PT)`,
+            scoring: [`🎉 點擊領取新年簽到禮的在場每位夥伴，人人固定入帳新年開運積分 +${giftPts} PT（每人限領 1 次）！`],
           };
         }
         return item;
@@ -223,11 +226,11 @@
         }
       }
 
-      // 若排程在跨年紅包時段且尚無開啟中的主題房，直接顯示跨年煙火紅包舞台
+      // 若排程在跨年簽到時段且尚無開啟中的主題房，直接顯示跨年煙火簽到舞台
       const active = this.getActiveSession(themeSessions);
 
-      if (!active && sceneInfo.scene === "red_packet") {
-        return this.renderRedPacketStandalone(ctx);
+      if (!active && sceneInfo.scene === "nye_gift") {
+        return this.renderNyeCheckinStandalone(ctx);
       }
 
       if (!active) {
@@ -299,7 +302,7 @@
           </div>
 
           ${
-            !joined && active.theme_type !== "nye_red_packet"
+            !joined && active.theme_type !== "nye_checkin"
               ? `<div style="text-align:center;padding:10px 8px 6px 8px;">
                   <p class="muted-sm" style="margin-bottom:10px;">目前已有 <b>${(active.participants || []).length}</b> 位夥伴在房間內</p>
                   <button class="btn btn-gold" style="width:100%;font-size:17px;padding:14px;" onclick="ThemeGamesUI.joinSession('${active.id}')">
@@ -329,8 +332,8 @@
           return this.renderFindFigurine(session, ctx, isHost, playerMap);
         case "physical_6stages":
           return this.renderPhysical6(session, ctx, isHost, playerMap);
-        case "nye_red_packet":
-          return this.renderRedPacketSession(session, ctx, isHost);
+        case "nye_checkin":
+          return this.renderNyeCheckinSession(session, ctx, isHost);
         default:
           return `<div>未知主題類型</div>`;
       }
@@ -384,16 +387,7 @@
       const idx = st.idx || 0;
       const cur = items[idx];
       if (!cur) {
-        return `
-          <div class="mini-game-box" style="text-align:center;">
-            <h3>🎉 Round ${st.year === "2026" ? `1 (${esc(lbA)})` : `2 (${esc(lbB)})`} 全數猜完啦！</h3>
-            ${
-              isHost && st.year === "2026"
-                ? `<button class="btn btn-gold" style="margin-top:12px;" onclick="ThemeGamesUI.startShareRound('${session.id}', '2027')">🚀 進入 Round 2：猜【${esc(lbB)}】！</button>`
-                : ""
-            }
-          </div>
-        `;
+        return this.renderShareDetectiveLeaderboard(session, ctx, isHost, playerMap, lbA, lbB);
       }
 
       const stepKey = `${st.year}_${idx}`;
@@ -405,6 +399,7 @@
         .filter((p) => !answeredSet.has(p.id))
         .map((p) => esc(p.name));
       const myResp = resps.find((r) => r.player_id === me.id);
+      const isEditingShare = this.editingShareStepKey === stepKey;
       const isStoryOwner = cur.ownerId === me.id;
 
       return `
@@ -429,8 +424,15 @@
 
           ${
             !st.revealed
-              ? myResp
-                ? `<div class="locked-bet-msg" style="text-align:center;">🔒 你已鎖定答案！等全員選完後一起同步公布，絕不破梗！</div>`
+              ? myResp && !isEditingShare
+                ? `<div class="locked-cheer-msg" style="text-align:center;">
+                     <div>🔒 你已鎖定答案（猜主人：<b>${esc(playerMap[myResp.payload?.ownerPick]?.name || "?")}</b> ／ 細節 <b>${["A", "B", "C", "D"][myResp.payload?.factPick] || "?"}</b>）！</div>
+                     <div class="muted-xs" style="margin-top:3px;">等全員選完後同步公布，絕不破梗！</div>
+                     <button type="button" class="btn btn-ghost btn-xs" style="margin-top:8px;border-color:rgba(251,191,36,0.55);color:#fde047;"
+                       onclick="ThemeGamesUI.beginEditShareGuess('${stepKey}','${esc(myResp.payload?.ownerPick || "")}',${Number(myResp.payload?.factPick ?? -1)})">
+                       ↺ 開獎前修改我的猜測
+                     </button>
+                   </div>`
                 : `
                   <div class="sub-label">Step 1：猜這件事「屬於」現場哪一位？（+10 PT）</div>
                   <div class="owner-pick-grid">
@@ -456,11 +458,18 @@
                       .join("")}
                   </div>
 
-                  <button class="btn btn-gold" style="width:100%;margin-top:12px;"
-                    ${!this.localShareOwnerPick || this.localShareFactPick < 0 ? "disabled" : ""}
-                    onclick="ThemeGamesUI.submitShareGuess('${session.id}','${stepKey}')">
-                    ✅ 鎖定送出我的猜測
-                  </button>
+                  <div style="display:flex;gap:8px;margin-top:12px;">
+                    ${
+                      myResp
+                        ? `<button type="button" class="btn btn-ghost btn-sm" onclick="ThemeGamesUI.editingShareStepKey='';PartyApp.render();">取消修改</button>`
+                        : ""
+                    }
+                    <button class="btn btn-gold" style="flex:1;"
+                      ${!this.localShareOwnerPick || this.localShareFactPick < 0 ? "disabled" : ""}
+                      onclick="ThemeGamesUI.submitShareGuess('${session.id}','${stepKey}')">
+                      ✅ ${myResp ? "更新鎖定我的猜測" : "鎖定送出我的猜測"}
+                    </button>
+                  </div>
                 `
               : `
                 <div class="reveal-card">
@@ -502,6 +511,201 @@
       `;
     },
 
+    beginEditShareGuess(stepKey, ownerPick, factPick) {
+      this.editingShareStepKey = stepKey;
+      this.localShareOwnerPick = ownerPick || "";
+      this.localShareFactPick = Number.isFinite(factPick) ? factPick : -1;
+      window.PartyApp.render();
+    },
+
+    renderShareDetectiveLeaderboard(session, ctx, isHost, playerMap, lbA, lbB) {
+      const { themeResponses, badgesAwarded } = ctx;
+      const st = session.state || {};
+      const roundsByYear = { ...(st.roundsByYear || {}) };
+      if (st.year && Array.isArray(st.items) && !roundsByYear[st.year]) {
+        roundsByYear[st.year] = st.items;
+      }
+      const has2026 = Array.isArray(roundsByYear["2026"]) && roundsByYear["2026"].length > 0;
+      const has2027 = Array.isArray(roundsByYear["2027"]) && roundsByYear["2027"].length > 0;
+      const scope =
+        has2026 && has2027
+          ? this.shareRankScope || "all"
+          : has2027
+          ? "2027"
+          : "2026";
+      const yearsToCount =
+        scope === "all"
+          ? ["2026", "2027"].filter((y) => Array.isArray(roundsByYear[y]))
+          : [scope].filter((y) => Array.isArray(roundsByYear[y]));
+
+      const sessResps = (themeResponses || []).filter((r) => r.session_id === session.id);
+      const mindReaders = new Set(
+        (badgesAwarded || [])
+          .filter((b) => b.badge_code === "mile_mindreader")
+          .map((b) => b.player_id)
+      );
+
+      const stats = (session.participants || []).map((pid) => {
+        const pl = playerMap[pid] || { id: pid, name: pid };
+        let ownerHits = 0;
+        let factHits = 0;
+        let doubleKills = 0;
+        let questionsGuessed = 0;
+
+        yearsToCount.forEach((yr) => {
+          (roundsByYear[yr] || []).forEach((item, i) => {
+            if (!item || item.ownerId === pid) return;
+            questionsGuessed += 1;
+            const r = sessResps.find(
+              (x) => x.step_key === `${yr}_${i}` && x.player_id === pid
+            );
+            if (!r || !r.payload) return;
+            const hitOwner = r.payload.ownerPick === item.ownerId;
+            const hitFact = Number(r.payload.factPick) === Number(item.trueIdx);
+            if (hitOwner) ownerHits += 1;
+            if (hitFact) factHits += 1;
+            if (hitOwner && hitFact) doubleKills += 1;
+          });
+        });
+
+        const totalHits = ownerHits + factHits;
+        const possibleHits = questionsGuessed * 2;
+        const accuracyRatio = possibleHits > 0 ? totalHits / possibleHits : 0;
+        const accuracyPct = possibleHits > 0 ? Math.round(accuracyRatio * 100) : 0;
+        const dkRatio = questionsGuessed > 0 ? doubleKills / questionsGuessed : 0;
+        const guessPts = totalHits * 10;
+        return {
+          pid,
+          name: pl.name || pid,
+          ownerHits,
+          factHits,
+          doubleKills,
+          questionsGuessed,
+          totalHits,
+          possibleHits,
+          accuracyRatio,
+          accuracyPct,
+          dkRatio,
+          guessPts,
+          hasBadge: mindReaders.has(pid),
+        };
+      });
+
+      // 以「命中率 %」優先排名（同命中率再比雙殺率，確保有填分享卡少猜自己 1 題的玩家 100% 公平，不被未填卡者多猜 1 題壓過！）
+      stats.sort((a, b) => {
+        if (Math.abs(b.accuracyRatio - a.accuracyRatio) > 1e-9) {
+          return b.accuracyRatio - a.accuracyRatio;
+        }
+        if (Math.abs(b.dkRatio - a.dkRatio) > 1e-9) {
+          return b.dkRatio - a.dkRatio;
+        }
+        return b.guessPts - a.guessPts;
+      });
+
+      // 計算並列名次（同命中率＆同雙殺率並列同名次，第 1 名全給皇冠！）
+      let curRank = 1;
+      stats.forEach((row, i) => {
+        if (
+          i > 0 &&
+          (Math.abs(row.accuracyRatio - stats[i - 1].accuracyRatio) > 1e-9 ||
+            Math.abs(row.dkRatio - stats[i - 1].dkRatio) > 1e-9)
+        ) {
+          curRank = i + 1;
+        }
+        row.rank = curRank;
+      });
+      const topScore = stats.length > 0 ? stats[0].totalHits : 0;
+      const topChampions = topScore > 0 ? stats.filter((s) => s.rank === 1) : [];
+
+      return `
+        <div class="mini-game-box">
+          <div style="text-align:center;margin-bottom:10px;">
+            <div style="font-size:32px;line-height:1.1;">🕵️‍♂️🔮👑</div>
+            <h3 style="color:#fde047;margin:6px 0 3px;">
+              ${
+                st.year === "2026" && !has2027
+                  ? `Round 1【${esc(lbA)}】神探中場風雲榜`
+                  : "《跨年分享篇》終極讀心神探總排名"
+              }
+            </h3>
+            <div class="muted-xs">依「命中率 %」優先排名（猜中主人 +10 ／ 猜中真實細節 +10；單輪命中率 ≥70% 解鎖讀心神探 +40 PT）</div>
+          </div>
+
+          ${
+            has2026 && has2027
+              ? `<div class="gm-nav" style="justify-content:center;margin-bottom:10px;">
+                   <button type="button" class="chip-btn ${scope === "all" ? "active" : ""}" onclick="ThemeGamesUI.shareRankScope='all';PartyApp.render();">🏆 兩輪總合榜</button>
+                   <button type="button" class="chip-btn ${scope === "2026" ? "active" : ""}" onclick="ThemeGamesUI.shareRankScope='2026';PartyApp.render();">📘 Round 1 (${esc(lbA)})</button>
+                   <button type="button" class="chip-btn ${scope === "2027" ? "active" : ""}" onclick="ThemeGamesUI.shareRankScope='2027';PartyApp.render();">🚀 Round 2 (${esc(lbB)})</button>
+                 </div>`
+              : ""
+          }
+
+          ${
+            topChampions.length > 0
+              ? `<div class="poll-crown-banner" style="margin-bottom:10px;">
+                   <div class="muted-xs" style="color:#fde047;font-weight:800;">👑 最強讀心神探冠軍（${topChampions.length > 1 ? `${topChampions.length} 人並列第 1` : "獨占鰲頭"}）</div>
+                   <div class="poll-tied-chips" style="justify-content:center;margin-top:6px;">
+                     ${topChampions
+                       .map(
+                         (c) => `<span class="crown-winner-chip">👑 ${esc(c.name)} (+${c.guessPts} PT・命中 ${c.accuracyPct}%)</span>`
+                       )
+                       .join("")}
+                   </div>
+                 </div>`
+              : ""
+          }
+
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${stats
+              .map((r) => {
+                const isChamp = r.rank === 1 && r.guessPts > 0;
+                const rankBadge = isChamp
+                  ? "👑 #1"
+                  : r.rank === 2
+                  ? "🥈 #2"
+                  : r.rank === 3
+                  ? "🥉 #3"
+                  : `#${r.rank}`;
+                return `
+                  <div class="detective-rank-row ${isChamp ? "champ" : ""}">
+                    <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
+                      <span class="det-rank-num">${rankBadge}</span>
+                      <div style="min-width:0;flex:1;">
+                        <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+                          <b>${esc(r.name)}</b>
+                          ${r.hasBadge ? `<span class="q-tag q-ok">🔮 讀心神探</span>` : ""}
+                        </div>
+                        <div class="muted-xs">
+                          猜中主人 ${r.ownerHits} ｜ 真實細節 ${r.factHits} ｜ 🔥雙殺 ${r.doubleKills} 題（命中率 ${r.accuracyPct}%）
+                        </div>
+                      </div>
+                    </div>
+                    <div style="text-align:right;white-space:nowrap;">
+                      <div class="gold-text" style="font-size:15px;font-weight:900;">命中 ${r.accuracyPct}%</div>
+                      <div class="muted-xs">+${r.guessPts} PT</div>
+                    </div>
+                  </div>
+                `;
+              })
+              .join("")}
+          </div>
+
+          ${
+            isHost && st.year === "2026"
+              ? `<button class="btn btn-gold" style="width:100%;margin-top:14px;" onclick="ThemeGamesUI.startShareRound('${session.id}', '2027')">
+                   🚀 繼續進入 Round 2：猜大家的【${esc(lbB)}】！
+                 </button>`
+              : isHost && st.year === "2027"
+              ? `<button class="btn btn-secondary btn-sm" style="width:100%;margin-top:14px;" onclick="ThemeGamesUI.closeSession('${session.id}')">
+                   🏁 圓滿結束《分享篇》返回主題大廳
+                 </button>`
+              : ""
+          }
+        </div>
+      `;
+    },
+
     // ==================== 2. 🗳️ 匿名靈魂爆料派對 ====================
     renderPollMinority(session, ctx, isHost, playerMap) {
       const { me, themeResponses, questionBanks } = ctx;
@@ -537,18 +741,25 @@
 
           ${
             !st.revealed
-              ? myResp
-                ? `<div class="locked-bet-msg" style="text-align:center;">✅ 已完成匿名投票，等待開票揭曉！</div>`
-                : `<div class="muted-xs" style="margin-bottom:6px;">匿名投給 1 位最符合的夥伴（可投自己！投中最高票 +15 PT）：</div>
+              ? `<div>
+                   ${
+                     myResp
+                       ? `<div class="my-cheer-tag" style="margin-bottom:8px;text-align:center;">
+                            ✅ 你目前投給：<b>${esc(playerMap[myResp.payload?.pick]?.name || "夥伴")}</b>
+                            <span class="muted-xs" style="display:block;margin-top:2px;color:#d1fae5;">（GM 開票前點選下方任何人皆可隨時改票！）</span>
+                          </div>`
+                       : `<div class="muted-xs" style="margin-bottom:6px;">匿名投給 1 位最符合的夥伴（可投自己！投中最高票 +15 PT，開票前可隨時改票）：</div>`
+                   }
                    <div class="owner-pick-grid">
                      ${joinedPlayers
                        .map(
-                         (p) => `<button class="chip-select" onclick="ThemeGamesUI.submitPollVote('${session.id}','${stepKey}','${p.id}')">
-                           ${esc(p.name)}${p.id === me.id ? "（我）" : ""}
+                         (p) => `<button class="chip-select ${myResp?.payload?.pick === p.id ? "selected" : ""}" onclick="ThemeGamesUI.submitPollVote('${session.id}','${stepKey}','${p.id}')">
+                           ${myResp?.payload?.pick === p.id ? "✅ " : ""}${esc(p.name)}${p.id === me.id ? "（我）" : ""}
                          </button>`
                        )
                        .join("")}
-                   </div>`
+                   </div>
+                 </div>`
               : this.renderPollRevealResult(resps, playerMap)
           }
 
@@ -565,7 +776,8 @@
                   <details style="margin-top:8px;">
                     <summary class="muted-xs" style="cursor:pointer;">✏️ Host 現場臨時插播一題（剛發生的民宿內梗！）</summary>
                     <div style="margin-top:6px;display:flex;flex-direction:column;gap:6px;">
-                      <input id="live-custom-q" class="input-dark" placeholder="輸入題目（如：剛剛誰吃火鍋最認真？）">
+                      <div class="muted-xs">💡 範例：剛剛誰吃火鍋最認真？／誰昨天最早睡著？</div>
+                      <input id="live-custom-q" class="input-dark" placeholder="輸入臨時插播題目…">
                       <button class="btn btn-primary btn-xs" onclick="ThemeGamesUI.pushLiveCustomPoll('${session.id}')">📢 立即插播推送此題</button>
                     </div>
                   </details>
@@ -579,23 +791,66 @@
     renderPollRevealResult(resps, playerMap) {
       const tally = {};
       resps.forEach((r) => {
-        const tid = r.payload.pick;
+        const tid = r.payload?.pick;
+        if (!tid) return;
         tally[tid] = (tally[tid] || 0) + 1;
       });
-      const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
-      const topVotes = sorted.length ? sorted[0][1] : 0;
+      // 依得票數分組（同票的人合併擺在一起，第 1 高票全員都給 👑 皇冠！）
+      const byCount = new Map();
+      Object.entries(tally).forEach(([pid, cnt]) => {
+        if (!byCount.has(cnt)) byCount.set(cnt, []);
+        byCount.get(cnt).push(pid);
+      });
+      const tiers = [...byCount.entries()]
+        .sort((a, b) => b[0] - a[0])
+        .slice(0, 3);
+      const topVotes = tiers.length ? tiers[0][0] : 0;
+
       return `
         <div class="reveal-card">
-          <div style="font-weight:800;color:#fbbf24;margin-bottom:6px;">📊 匿名票選前 3 名（不公開誰投誰）：</div>
-          ${sorted
-            .slice(0, 3)
-            .map(
-              ([pid, cnt], i) => `<div style="margin:4px 0;">
-                ${i === 0 ? "👑 最高票" : `第 ${i + 1} 高`}：<b>${esc(playerMap[pid]?.name || pid)}</b>（${cnt} 票）
-              </div>`
-            )
-            .join("") || "無人投票"}
-          <div class="muted-xs" style="margin-top:6px;">凡投給最高票（${topVotes} 票）得主者已自動入帳 +15 PT！</div>
+          <div style="font-weight:800;color:#fbbf24;margin-bottom:8px;">📊 匿名票選結果揭曉（不公開誰投誰）：</div>
+          ${
+            tiers.length === 0
+              ? `<div class="muted-sm">本題無人投票</div>`
+              : tiers
+                  .map(([cnt, pids], tierIdx) => {
+                    if (tierIdx === 0) {
+                      return `
+                        <div class="poll-crown-banner">
+                          <div style="font-size:13px;font-weight:800;color:#fde047;margin-bottom:6px;">
+                            👑 最高票第 1 名（${cnt} 票${pids.length > 1 ? `・${pids.length} 人並列冠軍！` : ""}）
+                          </div>
+                          <div class="poll-tied-chips">
+                            ${pids
+                              .map(
+                                (pid) => `<span class="crown-winner-chip">👑 ${esc(playerMap[pid]?.name || pid)}</span>`
+                              )
+                              .join("")}
+                          </div>
+                        </div>
+                      `;
+                    }
+                    const medal = tierIdx === 1 ? "🥈 第 2 高票" : "🥉 第 3 高票";
+                    return `
+                      <div class="poll-tier-row">
+                        <span class="muted-xs" style="font-weight:800;min-width:86px;">${medal}（${cnt} 票）</span>
+                        <div class="poll-tied-chips">
+                          ${pids
+                            .map(
+                              (pid) => `<span class="part-chip">${esc(playerMap[pid]?.name || pid)}</span>`
+                            )
+                            .join("")}
+                        </div>
+                      </div>
+                    `;
+                  })
+                  .join("")
+          }
+          ${
+            topVotes > 0
+              ? `<div class="muted-xs" style="margin-top:8px;">🎉 凡投給最高票（${topVotes} 票）得主者，皆已自動入帳 +15 PT！</div>`
+              : ""
+          }
         </div>
       `;
     },
@@ -633,10 +888,19 @@
             <span class="muted-xs">已給分：${resps.length}/${Math.max(0, joinedPlayers.length - 1)} 人</span>
           </div>
 
-          <div class="wl-spectrum">
-            <div class="wl-end left">0<br>${esc(st.prompt.left)}</div>
-            <div class="wl-arrow">◀─── 0 ～ 100 ───▶</div>
-            <div class="wl-end right">100<br>${esc(st.prompt.right)}</div>
+          <div class="spectrum-3col">
+            <div class="spec-col spec-low">
+              <div class="spec-tag">最小端 0</div>
+              <div class="spec-txt">${esc(st.prompt.left)}</div>
+            </div>
+            <div class="spec-col spec-mid">
+              <div class="spec-tag">📡 頻率刻度</div>
+              <div class="spec-mid-hint">0 ◀──▶ 100<br>口頭舉例禁講數字</div>
+            </div>
+            <div class="spec-col spec-high">
+              <div class="spec-tag">最大端 100</div>
+              <div class="spec-txt">${esc(st.prompt.right)}</div>
+            </div>
           </div>
 
           ${
@@ -645,36 +909,85 @@
                   <span class="peek-secret">🎯 你的目標刻度是：<b style="font-size:26px;color:#fbbf24;">${st.target}</b>（請口頭講一句話提示大家，禁止講數字！）</span>
                 </div>`
               : !st.revealed
-              ? myResp
-                ? `<div class="locked-bet-msg" style="text-align:center;">✅ 你已鎖定刻度 <b>${myResp.payload.val}</b>！等待全員送出開獎…</div>`
+              ? myResp && this.editingWlStepKey !== stepKey
+                ? `<div class="locked-cheer-msg" style="text-align:center;">
+                     <div>✅ 你已鎖定刻度 <b>${myResp.payload.val}</b>！等待全員送出開獎…</div>
+                     <button type="button" class="btn btn-ghost btn-xs" style="margin-top:8px;border-color:rgba(251,191,36,0.55);color:#fde047;"
+                       onclick="ThemeGamesUI.localSliderVal=${Number(myResp.payload.val) || 50};ThemeGamesUI.editingWlStepKey='${stepKey}';PartyApp.render();">
+                       ↺ 開獎前修改刻度
+                     </button>
+                   </div>`
                 : `<div class="slider-box">
                     <div style="text-align:center;font-size:24px;font-weight:900;color:#38bdf8;" id="wl-val-label">${this.localSliderVal}</div>
+                    <div style="display:flex;justify-content:space-between;font-size:11.5px;color:#94a3b8;margin-bottom:3px;gap:8px;">
+                      <span>◀ 0 最小端</span>
+                      <span>最大端 100 ▶</span>
+                    </div>
                     <input type="range" min="0" max="100" value="${this.localSliderVal}" class="party-slider"
                       oninput="ThemeGamesUI.localSliderVal=Number(this.value);document.getElementById('wl-val-label').textContent=this.value;">
-                    <button class="btn btn-gold" style="width:100%;margin-top:10px;" onclick="ThemeGamesUI.submitWavelength('${session.id}','${stepKey}')">
-                      🎯 鎖定我的刻度猜測
-                    </button>
+                    <div style="display:flex;gap:8px;margin-top:10px;">
+                      ${
+                        myResp
+                          ? `<button type="button" class="btn btn-ghost btn-sm" onclick="ThemeGamesUI.editingWlStepKey='';PartyApp.render();">取消</button>`
+                          : ""
+                      }
+                      <button class="btn btn-gold" style="flex:1;" onclick="ThemeGamesUI.submitWavelength('${session.id}','${stepKey}')">
+                        🎯 ${myResp ? "更新鎖定刻度" : "鎖定我的刻度猜測"}
+                      </button>
+                    </div>
                   </div>`
               : ""
           }
 
           ${
             st.revealed
-              ? `<div class="reveal-card">
-                  <div style="font-size:20px;font-weight:900;color:#fbbf24;">🎯 靶心正解：${st.target}</div>
-                  <div style="margin-top:8px;">
-                    ${resps
-                      .map((r) => {
-                        const diff = Math.abs(r.payload.val - st.target);
-                        const pts = diff <= 4 ? 50 : diff <= 10 ? 30 : diff <= 18 ? 15 : 0;
-                        return `<div class="history-row">
-                          <span>${esc(playerMap[r.player_id]?.name)} 猜 <b>${r.payload.val}</b> (差 ${diff})</span>
-                          <span class="${pts > 0 ? "gold-text" : "muted-xs"}">+${pts} PT</span>
-                        </div>`;
-                      })
-                      .join("")}
-                  </div>
-                </div>`
+              ? (() => {
+                  const guessList = resps
+                    .filter((r) => r.player_id !== st.presenterId)
+                    .map((r) => ({
+                      ...r,
+                      diff: Math.abs(Number(r.payload.val) - st.target),
+                    }))
+                    .sort((a, b) => a.diff - b.diff);
+                  const bestDiff = guessList.length ? guessList[0].diff : 999;
+                  const within18 =
+                    st.lastWithin18 !== undefined
+                      ? st.lastWithin18
+                      : guessList.filter((r) => r.diff <= 18).length;
+                  const roomGuessers =
+                    st.lastTotalGuessers !== undefined
+                      ? st.lastTotalGuessers
+                      : Math.max(
+                          guessList.length,
+                          (session.participants || []).filter((pid) => pid !== st.presenterId).length,
+                          1
+                        );
+                  const hostBonus =
+                    st.lastHostBonus !== undefined
+                      ? st.lastHostBonus
+                      : within18 > 0
+                      ? Math.round((50 * within18) / roomGuessers)
+                      : 0;
+                  return `<div class="reveal-card">
+                    <div style="font-size:20px;font-weight:900;color:#fbbf24;">🎯 靶心正解：${st.target}</div>
+                    <div class="toast-inline" style="margin-top:6px;font-size:12.5px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                      <span>🎙️ 發訊員 <b>${esc(presenter.name)}</b> 助攻獎勵（${within18}/${roomGuessers} 人進得分圈）</span>
+                      <b class="${hostBonus > 0 ? "gold-text" : "muted-xs"}">+${hostBonus} PT</b>
+                    </div>
+                    <div style="margin-top:8px;">
+                      ${guessList
+                        .map((r) => {
+                          const pts = r.diff <= 4 ? 50 : r.diff <= 10 ? 30 : r.diff <= 18 ? 15 : 0;
+                          const isTop = r.diff === bestDiff && pts > 0;
+                          return `<div class="history-row">
+                            <span>${isTop ? "👑 " : ""}${esc(playerMap[r.player_id]?.name)} 猜 <b>${r.payload.val}</b> (誤差 ${r.diff})</span>
+                            <span class="${pts > 0 ? "gold-text" : "muted-xs"}">+${pts} PT</span>
+                          </div>`;
+                        })
+                        .join("")}
+                    </div>
+                  </div>`;
+                })()
               : ""
           }
 
@@ -703,7 +1016,7 @@
         return `
           <div class="mini-game-box" style="text-align:center;">
             <div class="q-title">🕵️ 誰是臥底準備室（已加入 ${joinedPlayers.length} 人）</div>
-            <p class="muted-sm">系統將依人數自動黑盒發放「平民詞／臥底詞／白板」，Host 也能一起抽牌下場抓鬼！</p>
+            <p class="muted-sm">系統將依人數自動隨機發放「平民詞／臥底詞／白板」，Host 也能一起抽牌下場抓鬼！</p>
             ${
               isHost
                 ? `<button class="btn btn-gold" style="margin-top:12px;" ${joinedPlayers.length < 3 ? "disabled" : ""} onclick="ThemeGamesUI.dealUndercover('${session.id}')">
@@ -720,9 +1033,11 @@
       const amAlive = aliveIds.includes(me.id);
       const stepKey = `uc_vote_${st.gameSeq || 1}_${st.voteRound || 1}`;
       const resps = (themeResponses || []).filter(
-        (r) => r.session_id === session.id && r.step_key === stepKey
+        (r) => r.session_id === session.id && r.step_key === stepKey && aliveIds.includes(r.player_id)
       );
       const myVote = resps.find((r) => r.player_id === me.id);
+      const startIdx = Math.max(0, aliveIds.indexOf(st.speakerStartId));
+      const speakChain = aliveIds.map((_, i) => aliveIds[(startIdx + i) % aliveIds.length]);
 
       return `
         <div class="mini-game-box">
@@ -741,30 +1056,40 @@
               : ""
           }
 
-          <div class="muted-sm" style="margin:10px 0;">
-            🎙️ 本輪起始發言：<b>${esc(playerMap[st.speakerStartId]?.name || "")}</b>（順時針各講一句話形容）<br>
-            存活玩家（${aliveIds.length} 人）：${aliveIds.map((id) => esc(playerMap[id]?.name || id)).join("、")}
+          <div class="muted-sm" style="margin:10px 0;line-height:1.55;">
+            🎙️ 本輪發言順序（各講一句話形容）：<br>
+            <b style="color:#fde047;">${speakChain
+              .map((id, idx) => `${idx + 1}.${esc(playerMap[id]?.name || id)}`)
+              .join(" ➜ ")}</b>
           </div>
 
           ${ st.lastResultMsg ? `<div class="reveal-card" style="margin-bottom:10px;">${esc(st.lastResultMsg)}</div>` : "" }
 
           ${
             !st.gameOver && amAlive
-              ? myVote
-                ? `<div class="locked-bet-msg">✅ 你本輪已投票（目前已投 ${resps.length}/${aliveIds.length} 人）</div>`
-                : `<div>
-                    <div class="sub-label">🗳️ 發言完畢請投票指認誰是內鬼（投對內鬼每輪額外 +5 PT）：</div>
-                    <div class="owner-pick-grid">
-                      ${aliveIds
-                        .filter((id) => id !== me.id)
-                        .map(
-                          (id) => `<button class="chip-select" onclick="ThemeGamesUI.voteUndercover('${session.id}','${stepKey}','${id}')">
-                            處決 ${esc(playerMap[id]?.name || id)}
-                          </button>`
-                        )
-                        .join("")}
-                    </div>
-                  </div>`
+              ? `<div>
+                  ${
+                    myVote
+                      ? `<div class="my-cheer-tag" style="margin-bottom:8px;text-align:center;">
+                           ✅ 本輪你目前投給：<b>${esc(playerMap[myVote.payload?.targetId]?.name || "")}</b>（已投 ${resps.length}/${aliveIds.length} 人，Host 截止開票前可隨時改票！）
+                         </div>`
+                      : `<div class="sub-label">🗳️ 發言完畢請投票指認誰是內鬼（正式處決投對內鬼額外 +5 PT，開票前可隨時改票）：</div>`
+                  }
+                  <div class="owner-pick-grid">
+                    ${aliveIds
+                      .filter((id) => id !== me.id)
+                      .map(
+                        (id) => `<button class="chip-select ${myVote?.payload?.targetId === id ? "selected" : ""}" onclick="ThemeGamesUI.voteUndercover('${session.id}','${stepKey}','${id}')">
+                          ${myVote?.payload?.targetId === id ? "✅ " : ""}處決 ${esc(playerMap[id]?.name || id)}
+                        </button>`
+                      )
+                      .join("")}
+                  </div>
+                </div>`
+              : !st.gameOver && !amAlive && myRole
+              ? `<div class="locked-cheer-msg" style="text-align:center;margin-top:8px;">
+                   👻 你已出局！請保持神秘旁觀推理，切勿透露自己的詞語喔！
+                 </div>`
               : ""
           }
 
@@ -875,7 +1200,7 @@
                       🚀 小人藏好了！啟動搜尋倒數計時器！
                     </button>
                   </div>`
-                : `<div class="locked-bet-msg" style="text-align:center;margin-top:12px;padding:16px 12px;">
+                : `<div class="locked-cheer-msg" style="text-align:center;margin-top:12px;padding:16px 12px;">
                     <div style="font-size:24px;margin-bottom:4px;">⏳</div>
                     <div><b>分隊完成！請依現場指示準備（${half === 1 ? "A隊藏小人、B隊先迴避" : "B隊藏小人、A隊先迴避"}）</b></div>
                     <div class="muted-xs" style="margin-top:4px;">等待 Host (GM) 按下開始後，畫面將自動同步顯示搜尋倒數計時！</div>
@@ -1001,41 +1326,41 @@
       `;
     },
 
-    // ==================== 7. 🧧 2027 跨年倒數煙火 ＆ 簽到紅包 ====================
-    renderRedPacketStandalone(ctx) {
-      return this.renderRedPacketCore(ctx, null, ctx.isGmUnlocked);
+    // ==================== 7. 🎆 2027 跨年倒數煙火 ＆ 新年簽到禮 ====================
+    renderNyeCheckinStandalone(ctx) {
+      return this.renderNyeCheckinCore(ctx, null, ctx.isGmUnlocked);
     },
 
-    renderRedPacketSession(session, ctx, isHost) {
-      return this.renderRedPacketCore(ctx, session, isHost);
+    renderNyeCheckinSession(session, ctx, isHost) {
+      return this.renderNyeCheckinCore(ctx, session, isHost);
     },
 
-    getDynamicRedPacketTargetMs(ctx) {
+    getDynamicNyeTargetMs(ctx) {
       const slots = window.PartyEngine.getNormalizedSlots(ctx.schedule, ctx.globalCfg);
-      const rpSlot = slots.find((s) => s.scene === "red_packet");
-      if (rpSlot) {
+      const giftSlot = slots.find((s) => s.scene === "nye_gift");
+      if (giftSlot) {
         // 若時段橫跨午夜 00:00（例如 23:55~00:15），精準取該午夜 00:00；否則取時段開始後 5 分鐘（或不超過結束時間）
-        const endDateKey = window.PartyEngine.taipeiParts(rpSlot.endMs).dateKey;
+        const endDateKey = window.PartyEngine.taipeiParts(giftSlot.endMs).dateKey;
         const midnightMs = window.PartyEngine.parseTaipeiMs(`${endDateKey}T00:00`);
-        if (midnightMs >= rpSlot.startMs && midnightMs <= rpSlot.endMs) {
+        if (midnightMs >= giftSlot.startMs && midnightMs <= giftSlot.endMs) {
           return midnightMs;
         }
-        return Math.min(rpSlot.endMs, rpSlot.startMs + 5 * 60000);
+        return Math.min(giftSlot.endMs, giftSlot.startMs + 5 * 60000);
       }
       return window.PartyEngine.parseTaipeiMs("2027-01-01T00:00");
     },
 
-    renderRedPacketCore(ctx, session, isHost) {
+    renderNyeCheckinCore(ctx, session, isHost) {
       const { me, ledger, globalCfg } = ctx;
       const g = { ...window.PARTY_CONFIG.DEFAULTS, ...(globalCfg || {}) };
-      const pts = Number(g.redPacketPoints) || 50;
+      const pts = Number(g.nyeGiftPoints) || 50;
       const nowEff = window.PartyEngine.getEffectiveNowMs(g, window.PartyDB.serverNowMs);
       const targetMs =
         (session && session.state && session.state.targetMs) ||
-        this.getDynamicRedPacketTargetMs(ctx);
+        this.getDynamicNyeTargetMs(ctx);
       const remainMs = targetMs - nowEff;
       const isMidnight = remainMs <= 0;
-      const claimed = (ledger || []).some((l) => l.id === `nye2027_redpacket_${me.id}`);
+      const claimed = (ledger || []).some((l) => l.id === `nye2027_checkin_${me.id}`);
 
       const secLeft = Math.max(0, Math.ceil(remainMs / 1000));
       return `
@@ -1049,7 +1374,7 @@
                     ? `倒數 ${Math.floor(secLeft / 3600)}h ${Math.floor((secLeft % 3600) / 60)}m`
                     : `${Math.floor(secLeft / 60)}:${String(secLeft % 60).padStart(2, "0")}`
                 }</div>
-                 <p class="muted-sm">倒數歸零瞬間（預計 ${esc(window.PartyEngine.formatDateTimeFriendly(targetMs))}），全場手機同步綻放煙火並解鎖開運紅包！</p>
+                 <p class="muted-sm">倒數歸零瞬間（預計 ${esc(window.PartyEngine.formatDateTimeFriendly(targetMs))}），全場手機同步綻放煙火並解鎖新年開運簽到禮！</p>
                  ${
                    isHost
                      ? `<button class="btn btn-secondary btn-sm" style="margin-top:10px;" onclick="ThemeGamesUI.triggerMockCountdown()">🧪 啟動 8 秒跨年倒數彩排模擬</button>`
@@ -1059,13 +1384,13 @@
                  ${
                    claimed
                      ? `<div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
-                          <div class="my-bet-tag" style="display:inline-block;padding:10px 18px;font-size:16px;">🧧 已領取新年開運紅包 +${pts} PT！新年快樂！</div>
+                          <div class="my-cheer-tag" style="display:inline-block;padding:10px 18px;font-size:16px;">🎉 已領取新年開運簽到禮 +${pts} PT！新年快樂！</div>
                           <button type="button" class="btn btn-secondary btn-xs" onclick="ThemeGamesUI.replayFireworks()">
-                            🎆 再放一次跨年煙火＆鞭炮慶祝！
+                            🎆 再放一次跨年煙火＆慶典特效！
                           </button>
                         </div>`
-                     : `<button class="btn btn-redpacket" onclick="ThemeGamesUI.claimRedPacket()">
-                          🧧 點擊拆開新年煙火大紅包 (+${pts} PT)
+                     : `<button class="btn btn-nyegift" onclick="ThemeGamesUI.claimNyeGift()">
+                          🎉 點擊領取新年開運簽到禮 (+${pts} PT)
                         </button>`
                  }`
           }
@@ -1086,8 +1411,8 @@
       }
       const sid = `thm_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const initState =
-        this.selectedThemeToOpen === "nye_red_packet"
-          ? { targetMs: this.getDynamicRedPacketTargetMs(ctx) }
+        this.selectedThemeToOpen === "nye_checkin"
+          ? { targetMs: this.getDynamicNyeTargetMs(ctx) }
           : {};
       await window.PartyDB.upsert("theme_sessions", [
         {
@@ -1099,12 +1424,12 @@
           state: initState,
         },
       ]);
-      // 若當前排程已經在 theme / red_packet，保持自動排程不覆寫！僅在非主題時段臨時開房才切換
+      // 若當前排程已經在 theme / nye_gift，保持自動排程不覆寫！僅在非主題時段臨時開房才切換
       const g = { ...window.PARTY_CONFIG.DEFAULTS, ...(ctx.globalCfg || {}) };
       if (
         g.seasonStatus === "active" &&
         ctx.sceneInfo.scene !== "theme" &&
-        ctx.sceneInfo.scene !== "red_packet"
+        ctx.sceneInfo.scene !== "nye_gift"
       ) {
         g.sceneOverride = "theme";
         await window.PartyDB.upsert("config", [{ key: "global", value: g }]);
@@ -1139,38 +1464,56 @@
 
     // --- 分享篇 ---
     async startShareRound(sessionId, year) {
-      const ctx = window.PartyApp.getContext();
-      const s = (ctx.themeSessions || []).find((x) => x.id === sessionId);
-      if (!s) return;
-      const field = year === "2026" ? "share_2026" : "share_2027";
-      const items = [];
-      for (const pid of window.PartyEngine.shuffle(s.participants || [])) {
-        const p = (ctx.players || []).find((x) => x.id === pid);
-        const card = p && p[field];
-        if (card && card.story && card.trueFact) {
-          const fakes = (card.fakeFacts || ["假的細節一", "假的細節二", "假的細節三"]).slice(0, 3);
-          const tagged = [
-            { text: card.trueFact, isTrue: true },
-            ...fakes.map((f) => ({ text: f, isTrue: false })),
-          ];
-          const mixed = window.PartyEngine.shuffle(tagged);
-          items.push({
-            ownerId: pid,
-            story: card.story,
-            options: mixed.map((m) => m.text),
-            trueIdx: mixed.findIndex((m) => m.isTrue),
-          });
+      return window.PartyDB.withLock(`start_share_${sessionId}_${year}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        const [freshSessions, freshPlayers] = await Promise.all([
+          window.PartyDB.select("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
+            forceNetwork: true,
+          }),
+          window.PartyDB.select("players", "order=joined_at.asc", { forceNetwork: true }),
+        ]);
+        const s = (freshSessions && freshSessions[0]) || (ctx.themeSessions || []).find((x) => x.id === sessionId);
+        if (!s) return;
+        const playerList = Array.isArray(freshPlayers) && freshPlayers.length ? freshPlayers : ctx.players || [];
+        const field = year === "2026" ? "share_2026" : "share_2027";
+        const items = [];
+        for (const pid of window.PartyEngine.shuffle(s.participants || [])) {
+          const p = playerList.find((x) => x.id === pid);
+          const card = p && p[field];
+          if (card && card.story && card.trueFact) {
+            const fakes = (card.fakeFacts || ["假的細節一", "假的細節二", "假的細節三"]).slice(0, 3);
+            const tagged = [
+              { text: card.trueFact, isTrue: true },
+              ...fakes.map((f) => ({ text: f, isTrue: false })),
+            ];
+            const mixed = window.PartyEngine.shuffle(tagged);
+            items.push({
+              ownerId: pid,
+              story: card.story,
+              options: mixed.map((m) => m.text),
+              trueIdx: mixed.findIndex((m) => m.isTrue),
+            });
+          }
         }
-      }
-      if (items.length === 0) {
-        window.PartyApp.toast("目前入房玩家尚未填寫分享卡！請先至個人 Dashboard 填寫。");
-        return;
-      }
-      await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
-        status: "active",
-        state: { year, items, idx: 0, revealed: false },
+        if (items.length === 0) {
+          window.PartyApp.toast("目前入房玩家尚未填寫分享卡！請先至個人主頁填寫。");
+          return;
+        }
+        const prevRounds = (s.state && s.state.roundsByYear) || {};
+        this.editingShareStepKey = "";
+        this.shareRankScope = year === "2027" ? "all" : "2026";
+        await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
+          status: "active",
+          state: {
+            year,
+            items,
+            roundsByYear: { ...prevRounds, [year]: items },
+            idx: 0,
+            revealed: false,
+          },
+        });
+        await window.PartyApp.refreshAll();
       });
-      await window.PartyApp.refreshAll();
     },
 
     async submitShareGuess(sessionId, stepKey) {
@@ -1187,6 +1530,7 @@
           },
         },
       ]);
+      this.editingShareStepKey = "";
       this.localShareOwnerPick = "";
       this.localShareFactPick = -1;
       window.PartyFX.haptic("medium");
@@ -1194,116 +1538,123 @@
     },
 
     async revealShareItem(sessionId) {
-      const ctx = window.PartyApp.getContext();
-      const s = (ctx.themeSessions || []).find((x) => x.id === sessionId);
-      if (!s) return;
-      const st = { ...(s.state || {}), revealed: true };
-      const cur = (st.items || [])[st.idx || 0];
-      if (!cur) return;
-      const stepKey = `${st.year}_${st.idx || 0}`;
-      const resps = await window.PartyDB.select(
-        "theme_responses",
-        `session_id=eq.${encodeURIComponent(sessionId)}&step_key=eq.${encodeURIComponent(stepKey)}`
-      );
-      const dayKey = ctx.globalCfg?.activeDayKey || "2026-12-31";
-
-      // 題主固定領分享獎 +15 PT
-      await window.PartyDB.upsert(
-        "ledger",
-        [
-          {
-            id: `share_owner_${sessionId}_${stepKey}_${cur.ownerId}`,
-            player_id: cur.ownerId,
-            delta: 15,
-            category: "theme",
-            reason: `🌟 分享篇(${st.year})誠意分享獎`,
-            day_key: dayKey,
-            meta: { sessionId, themeType: "share_2026_2027", stepKey },
-          },
-        ],
-        { ignoreDuplicates: true }
-      );
-
-      // 猜題者各別計分 (+10 主人 / +10 真細節)
-      for (const r of resps) {
-        if (r.player_id === cur.ownerId) continue;
-        let pts = 0;
-        if (r.payload.ownerPick === cur.ownerId) pts += 10;
-        if (r.payload.factPick === cur.trueIdx) pts += 10;
-        if (pts > 0) {
-          await window.PartyDB.upsert(
-            "ledger",
-            [
-              {
-                id: `share_guess_${sessionId}_${stepKey}_${r.player_id}`,
-                player_id: r.player_id,
-                delta: pts,
-                category: "theme",
-                reason: `🌟 分享篇(${st.year})猜中獎勵`,
-                day_key: dayKey,
-                meta: { sessionId, themeType: "share_2026_2027", stepKey },
-              },
-            ],
-            { ignoreDuplicates: true }
-          );
-        }
-      }
-
-      await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
-        state: st,
-      });
-      window.PartyFX.playTone("win");
-      await window.PartyApp.refreshAll();
-    },
-
-    async nextShareItem(sessionId) {
-      const ctx = window.PartyApp.getContext();
-      const s = (ctx.themeSessions || []).find((x) => x.id === sessionId);
-      if (!s) return;
-      const st = { ...(s.state || {}) };
-      const nextIdx = (st.idx || 0) + 1;
-
-      // 若整輪結束，自動檢查【🔮 讀心神探 +40 PT】(命中率 >= 70%)
-      if (nextIdx >= (st.items || []).length && (st.items || []).length >= 2) {
-        const allResps = await window.PartyDB.select(
+      return window.PartyDB.withLock(`rev_share_${sessionId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        const s = (ctx.themeSessions || []).find((x) => x.id === sessionId);
+        if (!s || s.state?.revealed) return;
+        const st = { ...(s.state || {}), revealed: true };
+        const cur = (st.items || [])[st.idx || 0];
+        if (!cur) return;
+        const stepKey = `${st.year}_${st.idx || 0}`;
+        const resps = await window.PartyDB.select(
           "theme_responses",
-          `session_id=eq.${encodeURIComponent(sessionId)}`
+          `session_id=eq.${encodeURIComponent(sessionId)}&step_key=eq.${encodeURIComponent(stepKey)}`,
+          { forceNetwork: true }
         );
         const dayKey = ctx.globalCfg?.activeDayKey || "2026-12-31";
-        for (const pid of s.participants || []) {
-          let hits = 0;
-          let possible = 0;
-          (st.items || []).forEach((item, i) => {
-            if (item.ownerId === pid) return;
-            possible += 2;
-            const r = allResps.find(
-              (x) => x.step_key === `${st.year}_${i}` && x.player_id === pid
-            );
-            if (r) {
-              if (r.payload.ownerPick === item.ownerId) hits += 1;
-              if (r.payload.factPick === item.trueIdx) hits += 1;
-            }
-          });
-          if (possible >= 2 && hits / possible >= 0.7) {
-            await window.PartyEngine.awardBadgeOnce(
-              `mile_mindreader_${pid}`,
-              "mile_mindreader",
-              pid,
-              40,
-              "讀心神探",
-              `${st.year} 分享篇命中率達 ${Math.round((hits / possible) * 100)}%`,
-              dayKey
+
+        // 題主固定領分享獎 +15 PT
+        await window.PartyDB.upsert(
+          "ledger",
+          [
+            {
+              id: `share_owner_${sessionId}_${stepKey}_${cur.ownerId}`,
+              player_id: cur.ownerId,
+              delta: 15,
+              category: "theme",
+              reason: `🌟 分享篇(${st.year})誠意分享獎`,
+              day_key: dayKey,
+              meta: { sessionId, themeType: "share_2026_2027", stepKey },
+            },
+          ],
+          { ignoreDuplicates: true }
+        );
+
+        // 猜題者各別計分 (+10 主人 / +10 真細節)
+        for (const r of resps) {
+          if (r.player_id === cur.ownerId) continue;
+          let pts = 0;
+          if (r.payload.ownerPick === cur.ownerId) pts += 10;
+          if (r.payload.factPick === cur.trueIdx) pts += 10;
+          if (pts > 0) {
+            await window.PartyDB.upsert(
+              "ledger",
+              [
+                {
+                  id: `share_guess_${sessionId}_${stepKey}_${r.player_id}`,
+                  player_id: r.player_id,
+                  delta: pts,
+                  category: "theme",
+                  reason: `🌟 分享篇(${st.year})猜中獎勵`,
+                  day_key: dayKey,
+                  meta: { sessionId, themeType: "share_2026_2027", stepKey },
+                },
+              ],
+              { ignoreDuplicates: true }
             );
           }
         }
-      }
 
-      st.idx = nextIdx;
-      st.revealed = false;
-      await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
-        state: st,
+        await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
+          state: st,
+        });
+        window.PartyFX.playTone("win");
+        await window.PartyApp.refreshAll();
       });
-      await window.PartyApp.refreshAll();
+    },
+
+    async nextShareItem(sessionId) {
+      return window.PartyDB.withLock(`next_share_${sessionId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        const s = (ctx.themeSessions || []).find((x) => x.id === sessionId);
+        if (!s) return;
+        const st = { ...(s.state || {}) };
+        const nextIdx = (st.idx || 0) + 1;
+        this.editingShareStepKey = "";
+
+        // 若整輪結束，自動檢查【🔮 讀心神探 +40 PT】(命中率 >= 70%)
+        if (nextIdx >= (st.items || []).length && (st.items || []).length >= 2) {
+          const allResps = await window.PartyDB.select(
+            "theme_responses",
+            `session_id=eq.${encodeURIComponent(sessionId)}`,
+            { forceNetwork: true }
+          );
+          const dayKey = ctx.globalCfg?.activeDayKey || "2026-12-31";
+          for (const pid of s.participants || []) {
+            let hits = 0;
+            let possible = 0;
+            (st.items || []).forEach((item, i) => {
+              if (item.ownerId === pid) return;
+              possible += 2;
+              const r = allResps.find(
+                (x) => x.step_key === `${st.year}_${i}` && x.player_id === pid
+              );
+              if (r) {
+                if (r.payload.ownerPick === item.ownerId) hits += 1;
+                if (r.payload.factPick === item.trueIdx) hits += 1;
+              }
+            });
+            if (possible >= 2 && hits / possible >= 0.7) {
+              await window.PartyEngine.awardBadgeOnce(
+                `mile_mindreader_${pid}`,
+                "mile_mindreader",
+                pid,
+                40,
+                "讀心神探",
+                `${st.year} 分享篇命中率達 ${Math.round((hits / possible) * 100)}%`,
+                dayKey
+              );
+            }
+          }
+        }
+
+        st.idx = nextIdx;
+        st.revealed = false;
+        await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
+          state: st,
+        });
+        await window.PartyApp.refreshAll();
+      });
     },
 
     // --- 匿名爆料 & 少數決 ---
@@ -1323,55 +1674,58 @@
     },
 
     async revealPoll(sessionId) {
-      const ctx = window.PartyApp.getContext();
-      const s = (ctx.themeSessions || []).find((x) => x.id === sessionId);
-      if (!s) return;
-      const st = { subMode: "poll", qIdx: 0, roundSeq: 0, ...(s.state || {}), revealed: true };
-      const stepKey = `poll_${st.roundSeq || 0}`;
-      const resps = await window.PartyDB.select(
-        "theme_responses",
-        `session_id=eq.${encodeURIComponent(sessionId)}&step_key=eq.${encodeURIComponent(stepKey)}`
-      );
-      const dayKey = ctx.globalCfg?.activeDayKey || "2026-12-31";
-
-      const tally = {};
-      resps.forEach((r) => {
-        tally[r.payload.pick] = (tally[r.payload.pick] || 0) + 1;
-      });
-      const maxV = Math.max(0, ...Object.values(tally));
-      if (maxV > 0) {
-        const topIds = new Set(
-          Object.entries(tally)
-            .filter(([, cnt]) => cnt === maxV)
-            .map(([id]) => id)
+      return window.PartyDB.withLock(`rev_poll_${sessionId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        const s = (ctx.themeSessions || []).find((x) => x.id === sessionId);
+        if (!s || s.state?.revealed) return;
+        const st = { subMode: "poll", qIdx: 0, roundSeq: 0, ...(s.state || {}), revealed: true };
+        const stepKey = `poll_${st.roundSeq || 0}`;
+        const resps = await window.PartyDB.select(
+          "theme_responses",
+          `session_id=eq.${encodeURIComponent(sessionId)}&step_key=eq.${encodeURIComponent(stepKey)}`,
+          { forceNetwork: true }
         );
-        for (const r of resps) {
-          if (topIds.has(r.payload.pick)) {
-            await window.PartyDB.upsert(
-              "ledger",
-              [
-                {
-                  id: `poll_hit_${sessionId}_${stepKey}_${r.player_id}`,
-                  player_id: r.player_id,
-                  delta: 15,
-                  category: "theme",
-                  reason: "🗳️ 匿名爆料命中全場最高票共識",
-                  day_key: dayKey,
-                  meta: { sessionId, themeType: "poll_minority", stepKey },
-                },
-              ],
-              { ignoreDuplicates: true }
-            );
+        const dayKey = ctx.globalCfg?.activeDayKey || "2026-12-31";
+
+        const tally = {};
+        resps.forEach((r) => {
+          if (r.payload?.pick) tally[r.payload.pick] = (tally[r.payload.pick] || 0) + 1;
+        });
+        const maxV = Math.max(0, ...Object.values(tally));
+        if (maxV > 0) {
+          const topIds = new Set(
+            Object.entries(tally)
+              .filter(([, cnt]) => cnt === maxV)
+              .map(([id]) => id)
+          );
+          for (const r of resps) {
+            if (topIds.has(r.payload?.pick)) {
+              await window.PartyDB.upsert(
+                "ledger",
+                [
+                  {
+                    id: `poll_hit_${sessionId}_${stepKey}_${r.player_id}`,
+                    player_id: r.player_id,
+                    delta: 15,
+                    category: "theme",
+                    reason: "🗳️ 匿名爆料命中全場最高票共識",
+                    day_key: dayKey,
+                    meta: { sessionId, themeType: "poll_minority", stepKey },
+                  },
+                ],
+                { ignoreDuplicates: true }
+              );
+            }
           }
         }
-      }
 
-      await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
-        status: "active",
-        state: st,
+        await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
+          status: "active",
+          state: st,
+        });
+        window.PartyFX.playTone("win");
+        await window.PartyApp.refreshAll();
       });
-      window.PartyFX.playTone("win");
-      await window.PartyApp.refreshAll();
     },
 
     async pushLiveCustomPoll(sessionId) {
@@ -1468,49 +1822,59 @@
           payload: { val: this.localSliderVal },
         },
       ]);
+      this.editingWlStepKey = "";
       window.PartyFX.haptic("medium");
       await window.PartyApp.refreshAll();
     },
 
     async revealWavelength(sessionId) {
-      const ctx = window.PartyApp.getContext();
-      const s = (ctx.themeSessions || []).find((x) => x.id === sessionId);
-      if (!s || !s.state) return;
-      const st = { ...s.state, revealed: true };
-      const stepKey = `wl_${st.roundSeq || 1}`;
-      const resps = await window.PartyDB.select(
-        "theme_responses",
-        `session_id=eq.${encodeURIComponent(sessionId)}&step_key=eq.${encodeURIComponent(stepKey)}`
-      );
-      const dayKey = ctx.globalCfg?.activeDayKey || "2026-12-31";
-      let within15 = 0;
-      const guessers = resps.filter((r) => r.player_id !== st.presenterId);
+      return window.PartyDB.withLock(`rev_wl_${sessionId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        const s = (ctx.themeSessions || []).find((x) => x.id === sessionId);
+        if (!s || !s.state || s.state.revealed) return;
+        const st = { ...s.state, revealed: true };
+        const stepKey = `wl_${st.roundSeq || 1}`;
+        const resps = await window.PartyDB.select(
+          "theme_responses",
+          `session_id=eq.${encodeURIComponent(sessionId)}&step_key=eq.${encodeURIComponent(stepKey)}`,
+          { forceNetwork: true }
+        );
+        const dayKey = ctx.globalCfg?.activeDayKey || "2026-12-31";
+        let within18 = 0;
+        const guessers = resps.filter((r) => r.player_id !== st.presenterId);
+        const totalRoomGuessers = Math.max(
+          guessers.length,
+          (s.participants || []).filter((pid) => pid !== st.presenterId).length,
+          1
+        );
 
-      for (const r of guessers) {
-        const diff = Math.abs(Number(r.payload.val) - st.target);
-        if (diff <= 15) within15 += 1;
-        const pts = diff <= 4 ? 50 : diff <= 10 ? 30 : diff <= 18 ? 15 : 0;
-        if (pts > 0) {
-          await window.PartyDB.upsert(
-            "ledger",
-            [
-              {
-                id: `wl_guess_${sessionId}_${stepKey}_${r.player_id}`,
-                player_id: r.player_id,
-                delta: pts,
-                category: "theme",
-                reason: `📡 頻率同步命中靶圈 (誤差 ${diff})`,
-                day_key: dayKey,
-                meta: { sessionId, themeType: "wavelength", stepKey },
-              },
-            ],
-            { ignoreDuplicates: true }
-          );
+        for (const r of guessers) {
+          const diff = Math.abs(Number(r.payload.val) - st.target);
+          if (diff <= 18) within18 += 1;
+          const pts = diff <= 4 ? 50 : diff <= 10 ? 30 : diff <= 18 ? 15 : 0;
+          if (pts > 0) {
+            await window.PartyDB.upsert(
+              "ledger",
+              [
+                {
+                  id: `wl_guess_${sessionId}_${stepKey}_${r.player_id}`,
+                  player_id: r.player_id,
+                  delta: pts,
+                  category: "theme",
+                  reason: `📡 頻率同步命中靶圈 (誤差 ${diff})`,
+                  day_key: dayKey,
+                  meta: { sessionId, themeType: "wavelength", stepKey },
+                },
+              ],
+              { ignoreDuplicates: true }
+            );
+          }
         }
-      }
 
-      if (guessers.length > 0 && within15 > 0) {
-        const hostBonus = Math.round((50 * within15) / guessers.length);
+        const hostBonus = within18 > 0 ? Math.round((50 * within18) / totalRoomGuessers) : 0;
+        st.lastWithin18 = within18;
+        st.lastTotalGuessers = totalRoomGuessers;
+        st.lastHostBonus = hostBonus;
         if (hostBonus > 0) {
           await window.PartyDB.upsert(
             "ledger",
@@ -1520,7 +1884,7 @@
                 player_id: st.presenterId,
                 delta: hostBonus,
                 category: "theme",
-                reason: `📡 頻率同步發訊員神引導助攻 (${within15}/${guessers.length}人命中)`,
+                reason: `📡 頻率同步發訊員神引導助攻 (${within18}/${totalRoomGuessers}人進得分圈)`,
                 day_key: dayKey,
                 meta: { sessionId, themeType: "wavelength", stepKey },
               },
@@ -1528,13 +1892,13 @@
             { ignoreDuplicates: true }
           );
         }
-      }
 
-      await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
-        state: st,
+        await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
+          state: st,
+        });
+        window.PartyFX.playTone("win");
+        await window.PartyApp.refreshAll();
       });
-      window.PartyFX.playTone("win");
-      await window.PartyApp.refreshAll();
     },
 
     // --- 誰是臥底 ---
@@ -1603,134 +1967,157 @@
     },
 
     async tallyUndercover(sessionId) {
-      const ctx = window.PartyApp.getContext();
-      const s = (ctx.themeSessions || []).find((x) => x.id === sessionId);
-      if (!s || !s.state) return;
-      const st = { ...s.state };
-      const stepKey = `uc_vote_${st.gameSeq || 1}_${st.voteRound || 1}`;
-      const resps = await window.PartyDB.select(
-        "theme_responses",
-        `session_id=eq.${encodeURIComponent(sessionId)}&step_key=eq.${encodeURIComponent(stepKey)}`
-      );
-      const dayKey =
-        ctx.globalCfg?.activeDayKey ||
-        window.PartyEngine.taipeiParts(window.PartyDB.serverNowMs).dateKey;
-      const playerMap = {};
-      (ctx.players || []).forEach((p) => (playerMap[p.id] = p));
+      return window.PartyDB.withLock(`tally_uc_${sessionId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        const s = (ctx.themeSessions || []).find((x) => x.id === sessionId);
+        if (!s || !s.state || s.state.gameOver) return;
+        const st = { ...s.state };
+        const stepKey = `uc_vote_${st.gameSeq || 1}_${st.voteRound || 1}`;
+        const resps = await window.PartyDB.select(
+          "theme_responses",
+          `session_id=eq.${encodeURIComponent(sessionId)}&step_key=eq.${encodeURIComponent(stepKey)}`,
+          { forceNetwork: true }
+        );
+        const dayKey =
+          ctx.globalCfg?.activeDayKey ||
+          window.PartyEngine.taipeiParts(window.PartyDB.serverNowMs).dateKey;
+        const playerMap = {};
+        (ctx.players || []).forEach((p) => (playerMap[p.id] = p));
 
-      const tally = {};
-      for (const r of resps) {
-        const tid = r.payload.targetId;
-        tally[tid] = (tally[tid] || 0) + 1;
-        // 精準抓鬼獎勵：平民投中臥底或白板每輪 +5 PT
-        const voterRole = st.roles[r.player_id]?.type;
-        const targetRole = st.roles[tid]?.type;
-        if (voterRole === "civilian" && (targetRole === "spy" || targetRole === "blank")) {
-          await window.PartyDB.upsert(
-            "ledger",
-            [
-              {
-                id: `uc_snipe_${sessionId}_${stepKey}_${r.player_id}`,
-                player_id: r.player_id,
-                delta: 5,
-                category: "theme",
-                reason: "🕵️ 誰是臥底投票精準識破內鬼 (+5 PT)",
-                day_key: dayKey,
-                meta: { sessionId, themeType: "undercover", stepKey },
-              },
-            ],
-            { ignoreDuplicates: true }
-          );
+        const aliveSet = new Set(st.aliveIds || []);
+        const validResps = (resps || []).filter(
+          (r) =>
+            aliveSet.has(r.player_id) &&
+            r.payload?.targetId &&
+            aliveSet.has(r.payload.targetId) &&
+            r.player_id !== r.payload.targetId
+        );
+
+        const tally = {};
+        for (const r of validResps) {
+          const tid = r.payload.targetId;
+          tally[tid] = (tally[tid] || 0) + 1;
         }
-      }
 
-      const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
-      if (sorted.length === 0 || (sorted.length > 1 && sorted[0][1] === sorted[1][1])) {
-        st.voteRound = (st.voteRound || 1) + 1;
-        st.lastResultMsg = "⚖️ 最高票平手！請平票者各補述一句話，重新投票！";
-        await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
-          state: st,
-        });
-        return await window.PartyApp.refreshAll();
-      }
+        const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+        if (sorted.length === 0 || (sorted.length > 1 && sorted[0][1] === sorted[1][1])) {
+          const topCnt = sorted.length > 0 ? sorted[0][1] : 0;
+          const tiedNames = sorted
+            .filter((x) => x[1] === topCnt)
+            .map((x) => playerMap[x[0]]?.name || x[0])
+            .join("、");
+          st.voteRound = (st.voteRound || 1) + 1;
+          st.lastResultMsg = tiedNames
+            ? `⚖️ 最高票平手（${tiedNames} 各 ${topCnt} 票）！請平票者各補述一句話，重新投票！（平票重投不發放識破分）`
+            : "⚖️ 尚未有人送出有效投票，請重新投票！";
+          await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
+            state: st,
+          });
+          return await window.PartyApp.refreshAll();
+        }
 
-      const outId = sorted[0][0];
-      const outName = playerMap[outId]?.name || outId;
-      st.aliveIds = (st.aliveIds || []).filter((id) => id !== outId);
-
-      const aliveBad = st.aliveIds.filter((id) => st.roles[id]?.type !== "civilian");
-      const aliveGood = st.aliveIds.filter((id) => st.roles[id]?.type === "civilian");
-
-      if (aliveBad.length === 0) {
-        st.gameOver = true;
-        st.lastResultMsg = `🎉 ${outName} 出局！所有臥底與白板全滅，【平民陣營獲勝】！（平民詞：${st.civWord} ／ 臥底詞：${st.spyWord}）`;
-        for (const [pid, r] of Object.entries(st.roles)) {
-          if (r.type === "civilian") {
-            const pts = st.aliveIds.includes(pid) ? 40 : 20;
+        // 確認非平票、正式淘汰處決時，才發放平民投中內鬼的 +5 PT（防止平票重投無限洗分）
+        const elimStageKey = `elim_${st.gameSeq || 1}_${aliveSet.size}`;
+        for (const r of validResps) {
+          const tid = r.payload.targetId;
+          const voterRole = st.roles[r.player_id]?.type;
+          const targetRole = st.roles[tid]?.type;
+          if (voterRole === "civilian" && (targetRole === "spy" || targetRole === "blank")) {
             await window.PartyDB.upsert(
               "ledger",
               [
                 {
-                  id: `uc_end_${sessionId}_${st.gameSeq}_${pid}`,
-                  player_id: pid,
-                  delta: pts,
+                  id: `uc_snipe_${sessionId}_${elimStageKey}_${r.player_id}`,
+                  player_id: r.player_id,
+                  delta: 5,
                   category: "theme",
-                  reason: `🕵️ 誰是臥底平民獲勝 (${st.aliveIds.includes(pid) ? "存活" : "躺贏"})`,
+                  reason: "🕵️ 誰是臥底投票精準識破內鬼 (+5 PT)",
                   day_key: dayKey,
-                  meta: { sessionId, themeType: "undercover", outcome: "civilian_win" },
+                  meta: { sessionId, themeType: "undercover", stepKey },
                 },
               ],
               { ignoreDuplicates: true }
             );
           }
         }
-        window.PartyFX.playTone("win");
-      } else if (aliveBad.length >= aliveGood.length || st.aliveIds.length <= 2) {
-        st.gameOver = true;
-        st.lastResultMsg = `😈 ${outName} 出局！存活人數達警戒線，【臥底＆白板陣營大獲全勝】！（平民詞：${st.civWord} ／ 臥底詞：${st.spyWord}）`;
-        for (const [pid, r] of Object.entries(st.roles)) {
-          if (r.type === "spy" || r.type === "blank") {
-            const alive = st.aliveIds.includes(pid);
-            const pts =
-              r.type === "blank" ? (alive ? 90 : 30) : alive ? 70 : 35;
-            await window.PartyDB.upsert(
-              "ledger",
-              [
-                {
-                  id: `uc_end_${sessionId}_${st.gameSeq}_${pid}`,
-                  player_id: pid,
-                  delta: pts,
-                  category: "theme",
-                  reason: `🕵️ 誰是臥底內鬼陣營獲勝 (${r.type === "blank" ? "白板" : "臥底"})`,
-                  day_key: dayKey,
-                  meta: { sessionId, themeType: "undercover", outcome: "spy_win" },
-                },
-              ],
-              { ignoreDuplicates: true }
-            );
-            if (alive) {
-              await window.PartyEngine.awardBadgeOnce(
-                `mile_spy_${pid}`,
-                "mile_spy",
-                pid,
-                40,
-                "影帝級臥底",
-                "誰是臥底擔任內鬼存活獲勝",
-                dayKey
+
+        const outId = sorted[0][0];
+        const outName = playerMap[outId]?.name || outId;
+        st.aliveIds = (st.aliveIds || []).filter((id) => id !== outId);
+
+        const aliveBad = st.aliveIds.filter((id) => st.roles[id]?.type !== "civilian");
+        const aliveGood = st.aliveIds.filter((id) => st.roles[id]?.type === "civilian");
+
+        if (aliveBad.length === 0) {
+          st.gameOver = true;
+          st.lastResultMsg = `🎉 ${outName} 出局！所有臥底與白板全滅，【平民陣營獲勝】！（平民詞：${st.civWord} ／ 臥底詞：${st.spyWord}）`;
+          for (const [pid, r] of Object.entries(st.roles)) {
+            if (r.type === "civilian") {
+              const pts = st.aliveIds.includes(pid) ? 40 : 20;
+              await window.PartyDB.upsert(
+                "ledger",
+                [
+                  {
+                    id: `uc_end_${sessionId}_${st.gameSeq}_${pid}`,
+                    player_id: pid,
+                    delta: pts,
+                    category: "theme",
+                    reason: `🕵️ 誰是臥底平民獲勝 (${st.aliveIds.includes(pid) ? "存活" : "躺贏"})`,
+                    day_key: dayKey,
+                    meta: { sessionId, themeType: "undercover", outcome: "civilian_win" },
+                  },
+                ],
+                { ignoreDuplicates: true }
               );
             }
           }
+          window.PartyFX.playTone("win");
+        } else if (aliveBad.length >= aliveGood.length || st.aliveIds.length <= 2) {
+          st.gameOver = true;
+          st.lastResultMsg = `😈 ${outName} 出局！存活人數達警戒線，【臥底＆白板陣營大獲全勝】！（平民詞：${st.civWord} ／ 臥底詞：${st.spyWord}）`;
+          for (const [pid, r] of Object.entries(st.roles)) {
+            if (r.type === "spy" || r.type === "blank") {
+              const alive = st.aliveIds.includes(pid);
+              const pts = r.type === "blank" ? (alive ? 90 : 30) : alive ? 70 : 35;
+              await window.PartyDB.upsert(
+                "ledger",
+                [
+                  {
+                    id: `uc_end_${sessionId}_${st.gameSeq}_${pid}`,
+                    player_id: pid,
+                    delta: pts,
+                    category: "theme",
+                    reason: `🕵️ 誰是臥底內鬼陣營獲勝 (${r.type === "blank" ? "白板" : "臥底"})`,
+                    day_key: dayKey,
+                    meta: { sessionId, themeType: "undercover", outcome: "spy_win" },
+                  },
+                ],
+                { ignoreDuplicates: true }
+              );
+              if (alive) {
+                await window.PartyEngine.awardBadgeOnce(
+                  `mile_spy_${pid}`,
+                  "mile_spy",
+                  pid,
+                  40,
+                  "影帝級臥底",
+                  "誰是臥底擔任內鬼存活獲勝",
+                  dayKey
+                );
+              }
+            }
+          }
+          window.PartyFX.playTone("win");
+        } else {
+          st.voteRound = (st.voteRound || 1) + 1;
+          st.lastResultMsg = `📢 ${outName} 被投票處決出局！場上仍有內鬼，請繼續下一輪描述與投票！`;
         }
-        window.PartyFX.playTone("win");
-      } else {
-        st.voteRound = (st.voteRound || 1) + 1;
-        st.lastResultMsg = `📢 ${outName} 被投票處決出局！場上仍有內鬼，請繼續下一輪描述與投票！`;
-      }
 
-      await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
-        state: st,
+        await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
+          state: st,
+        });
+        await window.PartyApp.refreshAll();
       });
-      await window.PartyApp.refreshAll();
     },
 
     // --- 1/1 尋找真實小人 ---
@@ -1830,92 +2217,99 @@
     },
 
     async finishFigurineHalf(sessionId) {
-      const ctx = window.PartyApp.getContext();
-      const s = (ctx.themeSessions || []).find((x) => x.id === sessionId);
-      if (!s || !s.state) return;
-      const st = { ...s.state };
-      const half = st.half || 1;
-      const allResps = await window.PartyDB.select(
-        "theme_responses",
-        `session_id=eq.${encodeURIComponent(sessionId)}`
-      );
-      const halfResps = allResps.filter((r) => r.step_key.startsWith(`fig_h${half}_`));
-      const found = halfResps.length;
-      const maxElapsed = halfResps.reduce(
-        (m, r) => Math.max(m, Number(r.payload.elapsedMs) || 0),
-        found === 0 ? st.limitMin * 60000 : 0
-      );
+      return window.PartyDB.withLock(`fin_fig_${sessionId}`, async () => {
+        const ctx = window.PartyApp.getContext();
+        const s = (ctx.themeSessions || []).find((x) => x.id === sessionId);
+        if (!s || !s.state || s.state.half === 3) return;
+        const st = { ...s.state };
+        const half = st.half || 1;
+        const allResps = await window.PartyDB.select(
+          "theme_responses",
+          `session_id=eq.${encodeURIComponent(sessionId)}`,
+          { forceNetwork: true }
+        );
+        const halfResps = allResps.filter((r) => r.step_key.startsWith(`fig_h${half}_`));
+        const found = halfResps.length;
+        const maxElapsed = halfResps.reduce(
+          (m, r) => Math.max(m, Number(r.payload.elapsedMs) || 0),
+          found === 0 ? st.limitMin * 60000 : 0
+        );
 
-      if (half === 1) {
-        // 上半場是 B 隊找
-        st.resB = { found, elapsedMs: maxElapsed };
-        st.half = 2;
-        st.searchStartedAt = 0;
-        st.clueNote = "";
-      } else {
-        // 下半場是 A 隊找 -> 總結算！
-        st.resA = { found, elapsedMs: maxElapsed };
-        st.half = 3;
-        const aWin =
-          st.resA.found > st.resB.found ||
-          (st.resA.found === st.resB.found && st.resA.elapsedMs <= st.resB.elapsedMs);
-        const winTeam = aWin ? st.teamA : st.teamB;
-        const loseTeam = aWin ? st.teamB : st.teamA;
-        st.winnerBanner = `${aWin ? "🅰️ A 隊" : "🅱️ B 隊"} 最快完成搜查獲勝！全隊每人 +100 PT ＆ 解鎖【神探夏洛克】！`;
-        const dayKey =
-          ctx.globalCfg?.activeDayKey ||
-          window.PartyEngine.taipeiParts(window.PartyDB.serverNowMs).dateKey;
+        if (half === 1) {
+          st.resB = { found, elapsedMs: maxElapsed };
+          st.half = 2;
+          st.searchStartedAt = 0;
+          st.clueNote = "";
+        } else {
+          st.resA = { found, elapsedMs: maxElapsed };
+          st.half = 3;
+          const isExactTie =
+            st.resA.found === st.resB.found && st.resA.elapsedMs === st.resB.elapsedMs;
+          const aWin =
+            st.resA.found > st.resB.found ||
+            (st.resA.found === st.resB.found && st.resA.elapsedMs < st.resB.elapsedMs);
+          const winTeam = isExactTie ? [...(st.teamA || []), ...(st.teamB || [])] : aWin ? st.teamA : st.teamB;
+          const loseTeam = isExactTie ? [] : aWin ? st.teamB : st.teamA;
+          st.winnerBanner = isExactTie
+            ? "👑 雙隊尋獲數與秒數完全並列第 1！全場共同獲勝每人 +100 PT！"
+            : `${aWin ? "👑 🅰️ A 隊" : "👑 🅱️ B 隊"} 最快完成搜查獲勝！全隊每人 +100 PT ＆ 解鎖【神探夏洛克】！`;
+          const dayKey =
+            ctx.globalCfg?.activeDayKey ||
+            window.PartyEngine.taipeiParts(window.PartyDB.serverNowMs).dateKey;
 
-        for (const pid of winTeam) {
-          await window.PartyDB.upsert(
-            "ledger",
-            [
-              {
-                id: `fig_win_${sessionId}_${pid}`,
-                player_id: pid,
-                delta: 100,
-                category: "theme",
-                reason: "🏃‍♂️ 尋找真實小人最快獲勝隊伍獎勵",
-                day_key: dayKey,
-                meta: { sessionId, themeType: "find_figurine", outcome: "win" },
-              },
-            ],
-            { ignoreDuplicates: true }
-          );
-          await window.PartyEngine.awardBadgeOnce(
-            `mile_sherlock_${pid}`,
-            "mile_sherlock",
-            pid,
-            40,
-            "神探夏洛克",
-            "尋找真實小人獲勝隊員",
-            dayKey
-          );
+          for (const pid of winTeam) {
+            await window.PartyDB.upsert(
+              "ledger",
+              [
+                {
+                  id: `fig_win_${sessionId}_${pid}`,
+                  player_id: pid,
+                  delta: 100,
+                  category: "theme",
+                  reason: "🏃‍♂️ 尋找真實小人最快獲勝隊伍獎勵",
+                  day_key: dayKey,
+                  meta: { sessionId, themeType: "find_figurine", outcome: "win" },
+                },
+              ],
+              { ignoreDuplicates: true }
+            );
+            if (!isExactTie || st.resA.found > 0) {
+              await window.PartyEngine.awardBadgeOnce(
+                `mile_sherlock_${pid}`,
+                "mile_sherlock",
+                pid,
+                40,
+                "神探夏洛克",
+                "尋找真實小人獲勝隊員",
+                dayKey
+              );
+            }
+          }
+          for (const pid of loseTeam) {
+            await window.PartyDB.upsert(
+              "ledger",
+              [
+                {
+                  id: `fig_part_${sessionId}_${pid}`,
+                  player_id: pid,
+                  delta: 40,
+                  category: "theme",
+                  reason: "🏃‍♂️ 尋找真實小人完賽參與獎勵",
+                  day_key: dayKey,
+                  meta: { sessionId, themeType: "find_figurine", outcome: "participate" },
+                },
+              ],
+              { ignoreDuplicates: true }
+            );
+          }
+          window.PartyFX.playTone("win");
         }
-        for (const pid of loseTeam) {
-          await window.PartyDB.upsert(
-            "ledger",
-            [
-              {
-                id: `fig_part_${sessionId}_${pid}`,
-                player_id: pid,
-                delta: 40,
-                category: "theme",
-                reason: "🏃‍♂️ 尋找真實小人完賽參與獎勵",
-                day_key: dayKey,
-                meta: { sessionId, themeType: "find_figurine", outcome: "participate" },
-              },
-            ],
-            { ignoreDuplicates: true }
-          );
-        }
-        window.PartyFX.playTone("win");
-      }
 
-      await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
-        state: st,
+        await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
+          state: st,
+        });
+        await window.PartyApp.refreshAll();
       });
-      await window.PartyApp.refreshAll();
     },
 
     // --- 1/2 實體六關 ---
@@ -1978,7 +2372,7 @@
       await window.PartyApp.refreshAll();
     },
 
-    // --- 2027 跨年紅包 ---
+    // --- 2027 跨年煙火簽到禮 ---
     async triggerMockCountdown() {
       const ctx = window.PartyApp.getContext();
       const sid = `thm_nye_${Date.now()}`;
@@ -1992,7 +2386,7 @@
       await window.PartyDB.upsert("theme_sessions", [
         {
           id: sid,
-          theme_type: "nye_red_packet",
+          theme_type: "nye_checkin",
           status: "active",
           host_id: ctx.me.id,
           participants: (ctx.players || []).map((p) => p.id),
@@ -2007,15 +2401,15 @@
 
     replayFireworks() {
       window.PartyFX.playFirecrackers();
-      window.PartyFX.launchFireworksShow({ redPackets: true, durationMs: 3800 });
+      window.PartyFX.launchFireworksShow({ celebration: true, durationMs: 3800 });
     },
 
-    async claimRedPacket() {
-      return window.PartyDB.withLock("claim_red_packet", async () => {
+    async claimNyeGift() {
+      return window.PartyDB.withLock("claim_nye_gift", async () => {
         const ctx = window.PartyApp.getContext();
         if (!ctx.me) return;
         const g = { ...window.PARTY_CONFIG.DEFAULTS, ...(ctx.globalCfg || {}) };
-        const pts = Number(g.redPacketPoints) || 50;
+        const pts = Number(g.nyeGiftPoints) || 50;
         const dayKey =
           g.activeDayKey ||
           window.PartyEngine.taipeiParts(window.PartyDB.serverNowMs).dateKey;
@@ -2023,23 +2417,23 @@
           "ledger",
           [
             {
-              id: `nye2027_redpacket_${ctx.me.id}`,
+              id: `nye2027_checkin_${ctx.me.id}`,
               player_id: ctx.me.id,
               delta: pts,
-              category: "red_packet",
-              reason: `🧧 《${g.eventTitle || "跨年英雄紀元"}》午夜簽到開運紅包`,
+              category: "nye_gift",
+              reason: `🎉 《${g.eventTitle || "跨年英雄紀元"}》午夜煙火開運簽到禮`,
               day_key: dayKey,
             },
           ],
           { ignoreDuplicates: true }
         );
-        // 播放喜慶霹靂啪啦鞭炮音效 ＋ 全螢幕繽紛煙火與紅包金幣雨 ＋ 紅包開獎賀卡！
+        // 播放喜慶音效 ＋ 全螢幕繽紛煙火與慶典特效 ＋ 簽到賀卡！
         window.PartyFX.playFirecrackers();
-        window.PartyFX.launchFireworksShow({ redPackets: true, durationMs: 4200 });
-        if (window.PartyApp.showRedPacketSplash) {
-          window.PartyApp.showRedPacketSplash(pts, g.eventTitle || "跨年英雄紀元");
+        window.PartyFX.launchFireworksShow({ celebration: true, durationMs: 4200 });
+        if (window.PartyApp.showNyeGiftSplash) {
+          window.PartyApp.showNyeGiftSplash(pts, g.eventTitle || "跨年英雄紀元");
         } else {
-          window.PartyApp.toast(`🧧 新年快樂！成功領取 +${pts} PT 開運紅包！`);
+          window.PartyApp.toast(`🎉 新年快樂！成功領取 +${pts} PT 開運簽到禮！`);
         }
         await window.PartyApp.refreshAll();
         return inserted;

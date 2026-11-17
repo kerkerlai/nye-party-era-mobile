@@ -174,7 +174,17 @@
   let _fbBatchQueue = null;
   // 本機剛寫入、尚未收到伺服器回音的資料列：避免較舊的 SSE 回音把快取暫時倒退成舊值
   const _pendingLocalWrites = new Map();
-  const PENDING_TTL_MS = 4000;
+  const PENDING_TTL_MS = 1800;
+  const _activeSubscribers = new Set();
+  let _activeSseReconnect = null;
+
+  function notifyAllSubscribers(payload) {
+    _activeSubscribers.forEach((fn) => {
+      try {
+        fn(payload);
+      } catch (_) {}
+    });
+  }
 
   function fbCanon(val) {
     const strip = (v) => {
@@ -213,8 +223,14 @@
     } else {
       const prev = _pendingLocalWrites.get(pathKey);
       if (prev && prev.timer) clearTimeout(prev.timer);
-      const entry = { canon: fbCanon(rawVal), until: Date.now() + PENDING_TTL_MS, timer: null };
-      // 若遲遲等不到相符的回音（例如格式差異），到期後主動向伺服器校準該列，絕不留下過期資料
+      const entry = {
+        canon: fbCanon(rawVal),
+        updatedAt: rawVal && typeof rawVal === "object" ? String(rawVal.updated_at || rawVal.created_at || "") : "",
+        status: rawVal && typeof rawVal === "object" ? String(rawVal.status || "") : "",
+        until: Date.now() + PENDING_TTL_MS,
+        timer: null,
+      };
+      // 若遲遲等不到相符的回音（例如期間被 Host 或其他玩家推進了新狀態），到期後主動向伺服器校準並立即觸發 UI 重繪！
       entry.timer = setTimeout(() => {
         const cur = _pendingLocalWrites.get(pathKey);
         if (cur !== entry) return;
@@ -225,11 +241,17 @@
             if (v === undefined || _pendingLocalWrites.has(pathKey)) return;
             const b = ensureCacheBucket(fbUrl, table);
             if (!b) return;
+            const prevCanon = fbCanon(b[fbKey]);
+            const nextCanon = fbCanon(v);
             if (v === null) delete b[fbKey];
             else b[fbKey] = v;
+            if (prevCanon !== nextCanon) {
+              _fbCacheAt = Date.now();
+              notifyAllSubscribers({ reconciled: true, table, key: fbKey });
+            }
           })
           .catch(() => {});
-      }, PENDING_TTL_MS + 200);
+      }, PENDING_TTL_MS + 150);
       _pendingLocalWrites.set(pathKey, entry);
     }
     const bucket = ensureCacheBucket(fbUrl, table);
@@ -241,20 +263,43 @@
     }
   }
 
-  // 回音比對：該列若有本機待確認寫入，只接受「與本機寫入相符」的回音（代表伺服器已追上），較舊的回音一律略過
+  // 回音比對：若收到他人更新後的較新時間戳或狀態推進（如 Host 按下開局 lobby -> active），立即放行絕不吞掉事件！
   function shouldApplyRowEvent(table, key, resultingVal) {
     const pathKey = `/${table}/${key}`;
-    const pend = _pendingLocalWrites.get(pathKey) || _pendingLocalWrites.get(`/${table}/${encodeFbKey(key)}`);
+    const encPathKey = `/${table}/${encodeFbKey(key)}`;
+    const pend = _pendingLocalWrites.get(pathKey) || _pendingLocalWrites.get(encPathKey);
+    const clearPend = () => {
+      if (pend && pend.timer) clearTimeout(pend.timer);
+      _pendingLocalWrites.delete(pathKey);
+      _pendingLocalWrites.delete(encPathKey);
+    };
     if (!pend) return true;
     if (Date.now() > pend.until) {
-      if (pend.timer) clearTimeout(pend.timer);
-      _pendingLocalWrites.delete(pathKey);
+      clearPend();
       return true;
     }
     if (fbCanon(resultingVal) === pend.canon) {
-      if (pend.timer) clearTimeout(pend.timer);
-      _pendingLocalWrites.delete(pathKey);
+      clearPend();
       return true;
+    }
+    if (resultingVal && typeof resultingVal === "object") {
+      const incomingTs = String(resultingVal.updated_at || resultingVal.created_at || "");
+      if (incomingTs && pend.updatedAt && incomingTs > pend.updatedAt) {
+        clearPend();
+        return true;
+      }
+      if (pend.status && resultingVal.status && String(resultingVal.status) !== pend.status) {
+        clearPend();
+        return true;
+      }
+      if (
+        table === "theme_sessions" &&
+        resultingVal.state &&
+        Object.keys(resultingVal.state).length > 0
+      ) {
+        clearPend();
+        return true;
+      }
     }
     return false;
   }
@@ -606,7 +651,11 @@
         const pk = table === "config" ? "key" : "id";
         const nowIso = new Date().toISOString();
         const patchWithTs =
-          table === "tables" || table === "config" || table === "players"
+          table === "tables" ||
+          table === "config" ||
+          table === "players" ||
+          table === "theme_sessions" ||
+          table === "claims"
             ? { ...patch, updated_at: nowIso }
             : { ...patch };
 
@@ -836,7 +885,7 @@
           claims: null,
           claim_approvals: null,
           tables: null,
-          bets: null,
+          cheers: null,
           theme_sessions: null,
           theme_responses: null,
           badges_awarded: null,
@@ -881,7 +930,7 @@
         "claims",
         "claim_approvals",
         "tables",
-        "bets",
+        "cheers",
         "theme_sessions",
         "theme_responses",
         "badges_awarded",
@@ -901,6 +950,20 @@
       return true;
     },
 
+    invalidateCacheAndSync() {
+      _fbRootCache = null;
+      _pendingLocalWrites.forEach((p) => {
+        if (p && p.timer) clearTimeout(p.timer);
+      });
+      _pendingLocalWrites.clear();
+      if (typeof _activeSseReconnect === "function") {
+        try {
+          _activeSseReconnect();
+        } catch (_) {}
+      }
+      notifyAllSubscribers({ forceResume: true });
+    },
+
     subscribeChanges(onChange) {
       if (urlParams.get("nosse") === "1") {
         return () => {};
@@ -911,16 +974,26 @@
         debounceTimer = setTimeout(() => {
           debounceTimer = null;
           onChange(payload);
-        }, 120);
+        }, 100);
       };
+      _activeSubscribers.add(scheduleEmit);
 
       const fbUrl = getFirebaseUrl();
       if (fbUrl) {
-        // 🔥 Firebase Realtime Database 原生 SSE 增量串流監聽 + 120ms 合併防抖（消除 16 人連線重複整包下載！）
+        // 🔥 Firebase Realtime Database 原生 SSE 增量串流監聽 + 100ms 合併防抖
         let stopped = false;
         let abortCtrl = null;
         let sseConnected = false;
         let skipInitialEmit = true;
+
+        _activeSseReconnect = () => {
+          if (stopped) return;
+          if (!sseConnected && abortCtrl) {
+            try {
+              abortCtrl.abort();
+            } catch (_) {}
+          }
+        };
 
         const connectFirebaseStream = async () => {
           while (!stopped) {
@@ -979,15 +1052,33 @@
           }
         };
         connectFirebaseStream();
-        // 僅在 SSE 斷線或超過 25 秒未收到增量更新時做一次低頻保底校準
+        const onVisibilityResume = () => {
+          if (document.visibilityState === "visible") {
+            _fbRootCache = null;
+            if (!sseConnected && abortCtrl) {
+              try {
+                abortCtrl.abort();
+              } catch (_) {}
+            }
+            scheduleEmit({ resume: true });
+          }
+        };
+        document.addEventListener("visibilitychange", onVisibilityResume);
+        window.addEventListener("pageshow", onVisibilityResume);
+
+        // 僅在 SSE 斷線或超過 18 秒未收到增量更新時做一次低頻保底校準
         const pollTimer = setInterval(() => {
-          if (!sseConnected || Date.now() - _fbCacheAt > 25000) {
+          if (!sseConnected || Date.now() - _fbCacheAt > 18000) {
             _fbRootCache = null;
             scheduleEmit({ poll: true });
           }
-        }, 12000);
+        }, 9000);
         return () => {
           stopped = true;
+          _activeSubscribers.delete(scheduleEmit);
+          if (_activeSseReconnect) _activeSseReconnect = null;
+          document.removeEventListener("visibilitychange", onVisibilityResume);
+          window.removeEventListener("pageshow", onVisibilityResume);
           if (debounceTimer) clearTimeout(debounceTimer);
           if (abortCtrl) abortCtrl.abort();
           clearInterval(pollTimer);
@@ -1360,11 +1451,11 @@
       return true;
     },
 
-    // 🎆 全螢幕繽紛跨年煙火 ＋ 紅包金幣雨粒子動畫引擎
+    // 🎆 全螢幕繽紛跨年煙火 ＋ 慶典星光粒子動畫引擎
     launchFireworksShow(opts = {}) {
       const canvas = document.getElementById("fx-canvas");
       if (!canvas) return false;
-      const showRedPackets = Boolean(opts.redPackets);
+      const showCelebration = Boolean(opts.celebration || opts.confetti);
       const durationMs = Number(opts.durationMs) || 2600;
 
       stopCanvasFx();
@@ -1415,8 +1506,8 @@
           }, delay)
         );
 
-      if (showRedPackets) {
-        const icons = ["🧧", "🪙", "✨", "🧧", "🎉"];
+      if (showCelebration) {
+        const icons = ["🎆", "✨", "🎉", "🥂", "🌟"];
         for (let i = 0; i < 28; i++) {
           floaters.push({
             x: Math.random() * w(),
@@ -1458,7 +1549,7 @@
           ctx.restore();
         }
 
-        if (showRedPackets) {
+        if (showCelebration) {
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           for (const f of floaters) {
@@ -1584,14 +1675,35 @@
       } catch (_) {}
     },
 
-    async notify(title, body) {
+    syncPlayerToNative(playerId) {
+      try {
+        if (window.NYEPartyBridge && window.NYEPartyBridge.postMessage) {
+          window.NYEPartyBridge.postMessage(
+            JSON.stringify({
+              type: "sync_player",
+              playerId: String(playerId || ""),
+            })
+          );
+        }
+      } catch (_) {}
+    },
+
+    async notify(title, body, target = null) {
       PartyFX.playTone("bell");
       PartyFX.haptic("heavy");
+      const payloadStr =
+        target && typeof target === "object"
+          ? JSON.stringify(target)
+          : typeof target === "string"
+          ? target
+          : "";
       try {
         const bridge = window.NYEPartyBridge;
         if (bridge && bridge.postMessage) {
           try {
-            bridge.postMessage(JSON.stringify({ type: "notify", title, body }));
+            bridge.postMessage(
+              JSON.stringify({ type: "notify", title, body, payload: payloadStr })
+            );
           } catch (_) {}
           return;
         }
@@ -1600,7 +1712,17 @@
             await Notification.requestPermission();
           }
           if (Notification.permission === "granted") {
-            new Notification(title, { body });
+            const n = new Notification(title, { body });
+            if (payloadStr) {
+              n.onclick = () => {
+                try {
+                  window.focus();
+                  if (window.PartyApp && window.PartyApp.handleNotificationTap) {
+                    window.PartyApp.handleNotificationTap(payloadStr);
+                  }
+                } catch (_) {}
+              };
+            }
           }
         }
       } catch (_) {}

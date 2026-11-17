@@ -1,5 +1,5 @@
 /**
- * 《跨年英雄紀元》Android GM 防劇透黑盒主控台 (gmConsole.js)
+ * 《跨年英雄紀元》主辦人防劇透管理專區 (gmConsole.js)
  * 專為「身兼玩家的 GM」設計：
  *   - 遮蔽他人分數、秘密大腿名單、臥底底牌與 2026/2027 分享卡答案
  *   - 支援房間指派 (Assign Rooms)、自動排程設定、一鍵延後排程、題庫線上增刪改
@@ -22,7 +22,7 @@
     { v: "party", label: "🎲 自由賽桌 (Party)" },
     { v: "happy_hour", label: "🔥 限時加成 (+50%)" },
     { v: "theme", label: "🎪 主題遊戲集合" },
-    { v: "red_packet", label: "🧧 跨年倒數紅包" },
+    { v: "nye_gift", label: "🎆 跨年煙火簽到禮" },
     { v: "viewer", label: "🏆 終局結算開獎" },
   ];
 
@@ -114,7 +114,7 @@
           ${
             g.seasonStatus !== "settled"
               ? `<div class="sub-label" style="margin-bottom:6px;">🎛️ 臨時切換場景（突發狀況用，按「回到排程」立刻交還自動排程）：</div>
-                <div class="bet-btn-grid" style="margin-bottom:10px;">
+                <div class="cheer-btn-grid" style="margin-bottom:10px;">
                   ${[
                     { k: "auto", label: "⏰ 回到排程" },
                     { k: "party", label: "🎲 Party Game" },
@@ -140,7 +140,7 @@
 
           ${
             g.seasonStatus === "settled"
-              ? `<div class="my-bet-tag">🏆 已完成最終結算（Viewer 頒獎典禮公開模式）</div>`
+              ? `<div class="my-cheer-tag">🏆 已完成最終結算（Viewer 頒獎典禮公開模式）</div>`
               : `<div style="margin-bottom:8px;">
                   <div class="muted-xs" style="margin-bottom:6px;">🙈 防劇透保護中：後台不顯示秘密大腿配對名單，讓你也能當玩家！（開賽時系統會自動配對；若有新夥伴中途加入可點此重抽）</div>
                   <button class="btn btn-secondary btn-xs" style="width:100%;" onclick="GMConsole.launchSeason()">
@@ -150,7 +150,7 @@
           }
 
           ${
-            sceneInfo.scene === "theme" || sceneInfo.scene === "red_packet"
+            sceneInfo.scene === "theme" || sceneInfo.scene === "nye_gift"
               ? `<button class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="PartyApp.switchTab('stage')">
                   🎤 前往「🎮 遊戲舞台」開啟主題房當 Host 一起玩！
                 </button>`
@@ -176,13 +176,13 @@
 
           <details style="margin-top:14px;">
             <summary class="muted-xs" style="cursor:pointer;color:#94a3b8;font-weight:700;">
-              🛠️ 其他場景（開賽前／限時加成／跨年紅包，平時無須操作）
+              🛠️ 其他場景（暖身準備／限時加成／跨年簽到禮，平時無須操作）
             </summary>
-            <div class="bet-btn-grid" style="margin-top:8px;">
+            <div class="cheer-btn-grid" style="margin-top:8px;">
               ${[
-                { k: "pre_event", label: "⏳ 開賽前(僅填資料)" },
+                { k: "pre_event", label: "🎮 暖身與準備" },
                 { k: "happy_hour", label: "🔥 限時加成 (+50%)" },
-                { k: "red_packet", label: "🧧 跨年倒數紅包" },
+                { k: "nye_gift", label: "🎆 跨年煙火簽到禮" },
               ]
                 .map(
                   (m) => `<button class="btn ${(g.sceneOverride || "auto") === m.k ? "btn-gold" : "btn-secondary"} btn-sm"
@@ -200,15 +200,8 @@
             開啟後（<b>預設已開啟</b>），每個暱稱一註冊就綁定該支手機：本人同手機重開可無縫連回，但<b>其他手機輸入同名會被擋下</b>。本人換手機請到「🛏️ 分房&綠燈」按解除綁定；需要單機切多帳號測試時可暫時關閉。
           </p>
           <button class="btn ${g.enforceDeviceLock ? "btn-gold" : "btn-secondary"} btn-sm" style="width:100%;" onclick="GMConsole.toggleDeviceLock()">
-            ${g.enforceDeviceLock ? "🔒 目前：正式單機綁定鎖【已開啟】（禁止2台手機登同ID）" : "🧪 目前：Web 測試彈性模式【未鎖定】（允許自由切換帳號測試）"}
+            ${g.enforceDeviceLock ? "🔒 目前：正式單機綁定鎖【已開啟】（禁止2台手機登同ID）" : "🧪 目前：彈性測試模式【未鎖定】（允許自由切換帳號測試）"}
           </button>
-          ${
-            window.NYEPartyBridge && window.NYEPartyBridge.postMessage
-              ? `<button class="btn btn-ghost btn-xs" style="width:100%;margin-top:8px;" onclick="window.NYEPartyBridge.postMessage(JSON.stringify({type:'switch_server'}))">
-                   🔥 設定／切換 Firebase 資料庫網址
-                 </button>`
-              : ""
-          }
         </div>
 
         <div class="section-card" style="margin-top:14px;">
@@ -238,40 +231,40 @@
         </div>
 
         <div class="section-card" style="margin-top:14px;">
-          <div class="section-title">⚖️ 全域注碼、經濟額度、PIN 碼 ＆ 民宿百寶箱</div>
-          <p class="muted-xs" style="margin-bottom:8px;">修改下方數值並儲存後，玩家前台所有規則文字、按鈕金額與結算邏輯將 <b>100% 即時同步更新</b>：</p>
+          <div class="section-title">⚖️ 全域獎勵積分、每日額度、通行碼 ＆ 民宿百寶箱</div>
+          <p class="muted-xs" style="margin-bottom:8px;">修改下方數值並儲存後，玩家前台所有規則文字與正向加分邏輯將 <b>100% 即時同步更新</b>：</p>
           <div class="grid-2-btns">
             <div>
-              <label class="sub-label">⚔️ 賽桌參賽注碼 (PT)</label>
-              <input type="number" id="cfg-play-stake" class="input-dark" value="${g.partyPlayStake}">
+              <label class="sub-label">🏆 賽桌勝利基數 (PT/人)</label>
+              <input type="number" id="cfg-play-entry" class="input-dark" value="${g.partyEntryPts}">
             </div>
             <div>
-              <label class="sub-label">💰 場邊下注注碼 (PT)</label>
-              <input type="number" id="cfg-bet-stake" class="input-dark" value="${g.partyBetStake}">
+              <label class="sub-label">📣 免費預測命中分 (PT)</label>
+              <input type="number" id="cfg-cheer-entry" class="input-dark" value="${g.partyCheerPts}">
             </div>
             <div>
-              <label class="sub-label">🎁 開賽初始積分 (PT)</label>
+              <label class="sub-label">🎁 報到紀念積分 (PT)</label>
               <input type="number" id="cfg-init-pts" class="input-dark" value="${g.initialPoints}">
             </div>
             <div>
-              <label class="sub-label">☀️ 08:00 低保回血線 (PT)</label>
-              <input type="number" id="cfg-floor-pts" class="input-dark" value="${g.dailyFloorPoints}">
+              <label class="sub-label">👏 賽桌完賽鼓勵分 (PT)</label>
+              <input type="number" id="cfg-part-pts" class="input-dark" value="${g.partyPartPts ?? 5}">
             </div>
             <div>
               <label class="sub-label">🎲 同款每日計分上限(次)</label>
               <input type="number" id="cfg-max-plays" class="input-dark" value="${g.maxScoringPlaysPerGamePerDay}">
             </div>
             <div>
-              <label class="sub-label">🎯 同款每日下注上限(次)</label>
-              <input type="number" id="cfg-max-bets" class="input-dark" value="${g.maxBetsPerGamePerDay}">
+              <label class="sub-label">📣 同款每日應援上限(次)</label>
+              <input type="number" id="cfg-max-cheers" class="input-dark" value="${g.maxCheersPerGamePerDay}">
             </div>
             <div>
               <label class="sub-label">🕵️ 隱藏任務單張分數(PT)</label>
               <input type="number" id="cfg-mission-pts" class="input-dark" value="${g.hiddenMissionPoints}">
             </div>
             <div>
-              <label class="sub-label">🧧 跨年紅包簽到分數(PT)</label>
-              <input type="number" id="cfg-redpacket-pts" class="input-dark" value="${g.redPacketPoints}">
+              <label class="sub-label">🎆 跨年簽到禮分數(PT)</label>
+              <input type="number" id="cfg-nyegift-pts" class="input-dark" value="${g.nyeGiftPoints}">
             </div>
             <div>
               <label class="sub-label">🔑 玩家登入通行 PIN 碼</label>
@@ -336,7 +329,7 @@
 
     // ==================== 💰 GM 手動發分補償 ＆ 全遊戲勝負對帳 Log ====================
     renderAuditTab(ctx) {
-      const { players, ledger, tables, bets, themeSessions, scoreboard } = ctx;
+      const { players, ledger, tables, cheers, themeSessions, scoreboard } = ctx;
       const playerMap = {};
       (players || []).forEach((p) => (playerMap[p.id] = p));
 
@@ -372,17 +365,17 @@
       if (this.auditFilter === "all" || this.auditFilter === "party") {
         (tables || []).forEach((t) => {
           const tLedgers = tableLedgerMap[t.id] || [];
-          const tBets = (bets || []).filter((b) => b.table_id === t.id);
+          const tCheers = (cheers || []).filter((c) => c.table_id === t.id);
           if (pFilter) {
             const inPart = (t.participants || []).some((p) => p.id === pFilter);
-            const inBet = tBets.some((b) => b.bettor_id === pFilter);
+            const inCheer = tCheers.some((c) => c.supporter_id === pFilter);
             const inLed = tLedgers.some((l) => l.player_id === pFilter);
-            if (!inPart && !inBet && !inLed) return;
+            if (!inPart && !inCheer && !inLed) return;
           }
           events.push({
             kind: "party",
             ts: t.updated_at || t.created_at || "",
-            html: this.renderPartyAuditCard(t, tLedgers, tBets, playerMap),
+            html: this.renderPartyAuditCard(t, tLedgers, tCheers, playerMap),
           });
         });
       }
@@ -404,7 +397,7 @@
         });
       }
 
-      // 3. 獨立積分事件（GM 手動發分、隱藏任務、神隊友打卡、自動徽章、跨年紅包、早上回血、初始分）
+      // 3. 獨立積分事件（GM 手動發分、隱藏任務、神隊友打卡、自動徽章、跨年簽到禮、早上回血、初始分）
       (ledger || []).forEach((l) => {
         if (claimedLedgerIds.has(l.id)) return;
         if (pFilter && l.player_id !== pFilter) return;
@@ -432,8 +425,8 @@
           player: p,
           total: scoreboard.byId[p.id]?.baseScore || 0,
           initFloor: sumCat(["initial", "floor_topup", "topup"]),
-          partyBet: sumCat(["party_stake", "party_win", "bet_stake", "bet_payout", "bet_refund"]),
-          themeRed: sumCat(["theme", "red_packet"]),
+          partyCheer: sumCat(["party_play", "party_entry", "party_win", "party_refund", "happy_bonus", "cheer_entry", "cheer_win", "cheer_refund"]),
+          themeGift: sumCat(["theme", "nye_gift"]),
           missionBadge: sumCat(["mission", "badge"]),
           gmAdj: sumCat(["gm_adjust"]),
         };
@@ -474,9 +467,10 @@
               )
               .join("")}
           </div>
+          <div class="field-hint">💡 原因範例：補償拔槍斷線 ／ 現場加碼獎勵</div>
           <div class="grid-2-btns" style="margin-bottom:10px;">
-            <input type="number" id="gm-adj-pts" class="input-dark" value="20" placeholder="輸入加減 PT（如 30 或 -20）">
-            <input type="text" id="gm-adj-reason" class="input-dark" placeholder="發分原因（如：補償拔槍斷線 / 加碼獎）">
+            <input type="number" id="gm-adj-pts" class="input-dark" value="20" placeholder="加減 PT（如 30）">
+            <input type="text" id="gm-adj-reason" class="input-dark" placeholder="輸入發分原因…">
           </div>
           <button class="btn btn-gold" style="width:100%;" onclick="GMConsole.submitManualPoints()">
             💸 立即發放／調整積分並寫入對帳紀錄
@@ -498,9 +492,9 @@
                       <span class="gold-text" style="font-weight:900;font-size:15px;">總計 ${window.PartyEngine.fmtPt(r.total)} PT</span>
                     </div>
                     <div class="muted-xs" style="margin-top:4px;">
-                      初始&回血:${r.initFloor >= 0 ? `+${r.initFloor}` : r.initFloor} ｜
-                      賽桌&下注:${r.partyBet >= 0 ? `+${r.partyBet}` : r.partyBet} ｜
-                      主題活動:${r.themeRed >= 0 ? `+${r.themeRed}` : r.themeRed} ｜
+                      報到分:${r.initFloor >= 0 ? `+${r.initFloor}` : r.initFloor} ｜
+                      賽桌&應援:${r.partyCheer >= 0 ? `+${r.partyCheer}` : r.partyCheer} ｜
+                      主題活動:${r.themeGift >= 0 ? `+${r.themeGift}` : r.themeGift} ｜
                       任務&徽章:${r.missionBadge >= 0 ? `+${r.missionBadge}` : r.missionBadge} ｜
                       GM調整:${r.gmAdj >= 0 ? `+${r.gmAdj}` : r.gmAdj}
                     </div>
@@ -519,7 +513,7 @@
               { id: "all", label: "全部紀錄" },
               { id: "party", label: "🎲 賽桌遊戲" },
               { id: "theme", label: "🎪 主題遊戲" },
-              { id: "mission", label: "🕵️ 任務/打卡/紅包" },
+              { id: "mission", label: "🕵️ 任務/打卡/簽到" },
               { id: "gm", label: "👑 GM手動發分" },
             ]
               .map(
@@ -551,7 +545,7 @@
       `;
     },
 
-    renderPartyAuditCard(table, tLedgers, tBets, playerMap) {
+    renderPartyAuditCard(table, tLedgers, tCheers, playerMap) {
       const gm = CFG.PARTY_GAMES.find((x) => x.id === table.game_type) || { icon: "🎲", name: table.game_type };
       const parts = table.participants || [];
       const wids = table.winner_ids || [];
@@ -579,7 +573,7 @@
               ? `🎉 合作闖關成功：${parts.map((p) => p.name).join("、")}`
               : `💥 合作挑戰失敗：${parts.map((p) => p.name).join("、")}`;
         } else if (isPvpTie || realWinIds.length === 0) {
-          outcomeLine = `⚖️ 平手退回本金：${parts.map((p) => p.name).join("、")}`;
+          outcomeLine = `⚖️ 平手退還門票：${parts.map((p) => p.name).join("、")}`;
         } else {
           const winners = parts.filter((p) => winSet.has(p.id)).map((p) => p.name);
           const losers = parts.filter((p) => !winSet.has(p.id)).map((p) => p.name);
@@ -612,16 +606,16 @@
         detailLine = parts.map((p) => `${p.name}:${gs.scores[p.id] || 0}分`).join("、");
       }
 
-      // 計算每位相關玩家（參賽者 + 下注者）在本桌的淨得／扣分
+      // 計算每位相關玩家（參賽者 + 應援者）在本桌的淨得／扣分
       const netByPlayer = {};
       const roleNoteByPlayer = {};
       parts.forEach((p) => {
         netByPlayer[p.id] = 0;
         roleNoteByPlayer[p.id] = table.is_test_run ? "測試0分" : p.isScoring ? "參賽" : "陪玩0分";
       });
-      tBets.forEach((b) => {
-        if (netByPlayer[b.bettor_id] === undefined) netByPlayer[b.bettor_id] = 0;
-        roleNoteByPlayer[b.bettor_id] = `押注(${b.pick_label})`;
+      tCheers.forEach((c) => {
+        if (netByPlayer[c.supporter_id] === undefined) netByPlayer[c.supporter_id] = 0;
+        roleNoteByPlayer[c.supporter_id] = `應援(${c.pick_label})`;
       });
       tLedgers.forEach((l) => {
         netByPlayer[l.player_id] = (netByPlayer[l.player_id] || 0) + (Number(l.delta) || 0);
@@ -692,7 +686,7 @@
               <span class="muted-xs">${esc(this.formatShortTs(session.updated_at || session.created_at))}</span>
               <b>${meta.icon} 【主題】${esc(meta.name)}</b>
             </div>
-            <span class="q-tag q-bet">${session.status === "finished" ? "已結束" : "進行中"}</span>
+            <span class="q-tag q-cheer">${session.status === "finished" ? "已結束" : "進行中"}</span>
           </div>
           <div class="muted-xs" style="margin-top:4px;color:#e2e8f0;">${esc(summary)}</div>
           ${
@@ -725,12 +719,23 @@
       const nm = playerMap[l.player_id]?.name || l.player_id;
       const isGm = l.category === "gm_adjust";
       const delta = Number(l.delta) || 0;
+      const approvals = Array.isArray(l.meta?.approvals) ? l.meta.approvals : [];
+      const voterTxt = approvals.length
+        ? approvals
+            .map((a) => {
+              const anm = playerMap[a.approver_id]?.name || a.approver_name || a.approver_id;
+              const roleTag = a.role === "target" ? "當事人" : "見證";
+              return `${roleTag}:${anm}`;
+            })
+            .join("、")
+        : "";
       return `
-        <div class="audit-card ${isGm ? "audit-gm" : ""}">
+        <div class="audit-card clickable-row ${isGm ? "audit-gm" : ""}" onclick="PartyApp.openLedgerDetailModal('${esc(l.id)}')">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
             <div>
-              <span class="muted-xs">${esc(this.formatShortTs(l.created_at))}</span>
+              <span class="muted-xs">${esc(this.formatShortTs(l.meta?.approvedAt || l.created_at))}</span>
               <b>${esc(nm)}</b> — <span style="font-size:13px;">${esc(l.reason)}</span>
+              ${voterTxt ? `<div class="muted-xs" style="margin-top:2px;color:#7dd3fc;">🗳️ 認證通過：${esc(voterTxt)}（點擊查看明細 ▸）</div>` : ""}
             </div>
             <span class="delta-chip ${delta >= 0 ? "pos" : "neg"}">${delta >= 0 ? `+${delta}` : delta} PT</span>
           </div>
@@ -739,14 +744,33 @@
     },
 
     renderPlayersTab(ctx) {
-      const { players, globalCfg } = ctx;
+      const { players, globalCfg, themeResponses } = ctx;
       const g = { ...CFG.DEFAULTS, ...(globalCfg || {}) };
       const rooms = g.roomsList || CFG.DEFAULTS.roomsList;
+      const ugcReports = (themeResponses || []).filter((r) => r.session_id === "ugc_reports");
 
       return `
+        ${
+          ugcReports.length > 0
+            ? `<div class="section-card" style="margin-bottom:14px;border-color:rgba(251,113,133,0.6);">
+                 <div class="section-title" style="color:#fda4af;">🚩 待處理不當內容檢舉 (${ugcReports.length} 則)</div>
+                 ${ugcReports
+                   .map(
+                     (rep) => `<div class="history-row" style="flex-wrap:wrap;gap:6px;">
+                       <span>檢舉對象：<b>${esc(rep.payload?.targetName || rep.payload?.targetId || "")}</b>（由 ${esc(rep.payload?.reporterName || "成員")} 回報）</span>
+                       <div style="display:flex;gap:6px;">
+                         <button class="btn btn-rose btn-xs" onclick="GMConsole.confirmDeletePlayer('${esc(rep.payload?.targetId || "")}','${esc(rep.payload?.targetName || "")}')">🗑️ 移除該帳號</button>
+                         <button class="btn btn-ghost btn-xs" onclick="GMConsole.dismissUgcReport('${esc(rep.id)}')">✅ 已處理結案</button>
+                       </div>
+                     </div>`
+                   )
+                   .join("")}
+               </div>`
+            : ""
+        }
         <div class="section-card">
           <div class="section-title">🛏️ 已登入玩家分房指派 ＆ 行前分享卡綠燈 (${players.length} 人)</div>
-          <div class="muted-xs" style="margin-bottom:10px;">🙈 黑盒保護：此處僅顯示是否已填寫 2026/2027 分享卡（✅/⏳），不顯示故事內容與個人分數！</div>
+          <div class="muted-xs" style="margin-bottom:10px;">🙈 防劇透保護：此處僅顯示是否已填寫 2026/2027 分享卡（✅/⏳），不顯示故事內容與個人分數！</div>
 
           ${(players || [])
             .map((p) => {
@@ -848,7 +872,7 @@
                   .map(({ s, idx, sp, ep }) => {
                     const crossDay = ep.dateKey !== sp.dateKey ? ` (+1日 ${ep.mm}/${ep.dd})` : "";
                     const themeChoices = (window.ThemeGamesUI?.THEME_LIST || []).filter(
-                      (x) => x.id !== "nye_red_packet"
+                      (x) => x.id !== "nye_checkin"
                     );
                     return `
                       <div class="sched-friendly-card">
@@ -925,6 +949,8 @@
       const banks = ctx.questionBanks || window.DEFAULT_QUESTION_BANKS;
       const cats = [
         { k: "pollQuestions", label: "🗳️ 匿名爆料指認" },
+        { k: "fiveSeconds", label: "⏱️ 8秒不詞窮" },
+        { k: "itoThemes", label: "🔢 數字順風耳" },
         { k: "undercoverPairs", label: "🕵️ 誰是臥底詞組" },
         { k: "wavelengthPrompts", label: "📡 頻率同步光譜" },
         { k: "soulSync2v2", label: "🤝 2v2 靈魂默契" },
@@ -967,6 +993,17 @@
       if (cat === "pollQuestions") {
         return `<input id="bk-f1" class="input-dark" placeholder="輸入新爆料題（如：在場誰最會講幹話？）">`;
       }
+      if (cat === "fiveSeconds") {
+        return `<input id="bk-f1" class="input-dark" placeholder="輸入極簡主題（免寫「講出3個」，如：台灣手搖飲品牌）">`;
+      }
+      if (cat === "itoThemes") {
+        return `
+          <input id="bk-f1" class="input-dark" placeholder="主題名稱（如：荒島求生物品實用度）" style="margin-bottom:6px;">
+          <div class="grid-2-btns">
+            <input id="bk-f2" class="input-dark" placeholder="最小端 1（如：1：毫無用處）">
+            <input id="bk-f3" class="input-dark" placeholder="最大端 100（如：100：救命神器）">
+          </div>`;
+      }
       if (cat === "minorityQuestions") {
         return `
           <input id="bk-f1" class="input-dark" placeholder="二選一題幹" style="margin-bottom:6px;">
@@ -1008,6 +1045,12 @@
 
     formatBankItem(cat, item) {
       if (cat === "pollQuestions") return item.q;
+      if (cat === "fiveSeconds") {
+        return window.PartyGamesUI?.cleanFiveSecPrompt
+          ? window.PartyGamesUI.cleanFiveSecPrompt(item.prompt)
+          : item.prompt;
+      }
+      if (cat === "itoThemes") return `${item.title} [${item.low} ➔ ${item.high}]`;
       if (cat === "minorityQuestions") return `${item.q} [A: ${item.a} | B: ${item.b}]`;
       if (cat === "undercoverPairs") return `平民：${item.civilian} ／ 臥底：${item.spy}`;
       if (cat === "wavelengthPrompts") return `0 ${item.left} ◀──▶ 100 ${item.right}`;
@@ -1064,7 +1107,7 @@
           </div>
 
           <div class="sub-label">1. 時光機 Offset 快轉／倒退控制（全場連線手機同步快轉！）：</div>
-          <div class="bet-btn-grid" style="margin-bottom:8px;">
+          <div class="cheer-btn-grid" style="margin-bottom:8px;">
             <button class="btn btn-secondary btn-sm" onclick="GMConsole.shiftTimeTravel(-1440)">⏪ -1 天</button>
             <button class="btn btn-secondary btn-sm" onclick="GMConsole.shiftTimeTravel(1440)">⏩ +1 天</button>
             <button class="btn btn-secondary btn-sm" onclick="GMConsole.shiftTimeTravel(-60)">⏪ -1 小時</button>
@@ -1081,8 +1124,8 @@
             </button>
           </div>
 
-          <div class="sub-label">2. 依排程日期模擬跨日早上 08:00 刷新（重置每日 ${g.maxScoringPlaysPerGamePerDay} 次額度 ＋ 低於 ${g.dailyFloorPoints} PT 補滿）：</div>
-          <div class="bet-btn-grid" style="margin-bottom:14px;">
+          <div class="sub-label">2. 依排程日期模擬跨日早上 08:00 刷新（重置每日 ${g.maxScoringPlaysPerGamePerDay} 次計分與預測額度 ＋ 發放新任務）：</div>
+          <div class="cheer-btn-grid" style="margin-bottom:14px;">
             ${uniqueDays
               .slice(1)
               .map(
@@ -1091,7 +1134,7 @@
               .join("")}
           </div>
 
-          <div class="sub-label">3. 模擬跨年午夜最後 8 秒煙火倒數 ＆ 簽到紅包 (+${g.redPacketPoints} PT)：</div>
+          <div class="sub-label">3. 模擬跨年午夜最後 8 秒煙火倒數 ＆ 新年簽到禮 (+${g.nyeGiftPoints} PT)：</div>
           <button class="btn btn-primary btn-sm" style="width:100%;margin-bottom:16px;" onclick="GMConsole.simulateMidnight()">
             🎆 全場跳轉跨年倒數 8 秒模擬
           </button>
@@ -1147,7 +1190,7 @@
         ? window.PartyEngine.taipeiParts(normSlots[0].startMs).dateKey
         : "2026-12-31";
       const dayKey = g.activeDayKey || firstDayKey;
-      const initPts = Number(g.initialPoints) || 300;
+      const initPts = Number(g.initialPoints ?? 100);
       const pairs = window.PartyEngine.generateBalancedThighPairs(players.map((p) => p.id));
 
       for (const p of players) {
@@ -1156,7 +1199,7 @@
           thigh_id: pr.thigh_id,
           second_thigh_id: pr.second_thigh_id,
         });
-        // 發放初始積分（冪等防重發）
+        // 發放報到紀念積分（冪等防重發）
         await window.PartyDB.upsert(
           "ledger",
           [
@@ -1165,7 +1208,7 @@
               player_id: p.id,
               delta: initPts,
               category: "initial",
-              reason: `🎉 《${g.eventTitle || "跨年英雄紀元"}》開賽初始基金`,
+              reason: `🎉 《${g.eventTitle || "跨年英雄紀元"}》報到紀念榮譽分`,
               day_key: dayKey,
             },
           ],
@@ -1278,7 +1321,7 @@
       );
       window.PartyApp.confirmModal(
         "🗑️ 刪除玩家帳號",
-        `確定要永久刪除【${p.name}】嗎？\n將一併清除他的積分帳本、任務、徽章、認證申請與尚未開賽的賽桌／下注；被抽到他當秘密大腿的人會自動補抽新人選。${
+        `確定要永久刪除【${p.name}】嗎？\n將一併清除他的積分帳本、任務、徽章、認證申請與尚未開賽的賽桌／應援預測；被抽到他當秘密大腿的人會自動補抽新人選。${
           inPlaying ? "\n⚠️ 他目前正在對戰中，系統會先替他棄權。" : ""
         }\n此動作無法復原！`,
         "🗑️ 確定刪除",
@@ -1287,11 +1330,12 @@
       );
     },
 
-    async deletePlayerAccount(playerId) {
+    async deletePlayerAccount(playerId, opts = {}) {
       return window.PartyDB.withLock(`del_player_${playerId}`, async () => {
         const ctx = window.PartyApp.getContext();
         const victim = (ctx.players || []).find((x) => x.id === playerId);
-        if (!victim || playerId === ctx.me?.id) return;
+        const isSelf = playerId === ctx.me?.id;
+        if (!victim || (isSelf && !opts.allowSelf)) return;
         const enc = encodeURIComponent(playerId);
 
         // 1. 進行中賽桌：標記棄權並視情況結算；集結中賽桌：移出座位（房主則取消賽桌）
@@ -1299,10 +1343,10 @@
           const inTbl = (t.participants || []).some((x) => x.id === playerId);
           if (t.status === "open") {
             if (t.host_id === playerId) {
-              const tBets = (ctx.bets || []).filter((b) => b.table_id === t.id);
-              for (const b of tBets) {
-                await window.PartyDB.remove("ledger", `id=eq.${encodeURIComponent(`stake_${b.id}`)}`);
-                await window.PartyDB.remove("bets", `id=eq.${encodeURIComponent(b.id)}`);
+              const tCheers = (ctx.cheers || []).filter((c) => c.table_id === t.id);
+              for (const c of tCheers) {
+                await window.PartyDB.remove("ledger", `id=eq.${encodeURIComponent(`chr_entry_${c.id}`)}`);
+                await window.PartyDB.remove("cheers", `id=eq.${encodeURIComponent(c.id)}`);
               }
               await window.PartyDB.update("tables", `id=eq.${encodeURIComponent(t.id)}`, { status: "cancelled" });
             } else if (inTbl) {
@@ -1330,17 +1374,17 @@
               await window.PartyEngine.settlePartyTable(
                 snap,
                 remaining.length ? [remaining[0].id] : ["__pvp_tie__"],
-                ctx.bets,
+                ctx.cheers,
                 ctx.globalCfg
               );
             }
           }
         }
 
-        // 2. 清除下注（僅限尚未結算）、帳本、任務、徽章、認證
-        const openBets = (ctx.bets || []).filter((b) => b.bettor_id === playerId && b.status === "locked");
-        for (const b of openBets) {
-          await window.PartyDB.remove("bets", `id=eq.${encodeURIComponent(b.id)}`);
+        // 2. 清除應援預測、帳本、任務、徽章、認證
+        const myCheers = (ctx.cheers || []).filter((c) => c.supporter_id === playerId);
+        for (const c of myCheers) {
+          await window.PartyDB.remove("cheers", `id=eq.${encodeURIComponent(c.id)}`);
         }
         await window.PartyDB.remove("ledger", `player_id=eq.${enc}`);
         await window.PartyDB.remove("missions", `player_id=eq.${enc}`);
@@ -1387,9 +1431,20 @@
 
         this.manualTargetIds.delete(playerId);
         window.PartyFX.playTone("bell");
-        window.PartyApp.toast(`🗑️ 已刪除帳號【${victim.name}】並清理相關紀錄！`);
+        if (isSelf) {
+          window.PartyApp.logoutSwitchAccount();
+          window.PartyApp.toast("🗑️ 已永久註銷並刪除你的帳號與全部相關資料！");
+        } else {
+          window.PartyApp.toast(`🗑️ 已刪除帳號【${victim.name}】並清理相關紀錄！`);
+        }
         await window.PartyApp.refreshAll();
       });
+    },
+
+    async dismissUgcReport(reportId) {
+      await window.PartyDB.remove("theme_responses", `id=eq.${encodeURIComponent(reportId)}`);
+      window.PartyApp.toast("✅ 已結案移除該筆檢舉紀錄");
+      await window.PartyApp.refreshAll();
     },
 
     async saveGlobalParams() {
@@ -1413,14 +1468,14 @@
       g.sharePromptA = txt("cfg-share-prompt-a", g.sharePromptA || "2026 年最值得分享的一件事");
       g.sharePromptB = txt("cfg-share-prompt-b", g.sharePromptB || "2027 年最想完成的一件事");
 
-      g.partyPlayStake = num("cfg-play-stake", 5, g.partyPlayStake || 20);
-      g.partyBetStake = num("cfg-bet-stake", 5, g.partyBetStake || 10);
-      g.initialPoints = num("cfg-init-pts", 50, g.initialPoints || 300);
-      g.dailyFloorPoints = num("cfg-floor-pts", 0, g.dailyFloorPoints ?? 300);
+      g.partyEntryPts = num("cfg-play-entry", 5, g.partyEntryPts || 15);
+      g.partyCheerPts = num("cfg-cheer-entry", 5, g.partyCheerPts || 10);
+      g.initialPoints = num("cfg-init-pts", 0, g.initialPoints ?? 100);
+      g.partyPartPts = num("cfg-part-pts", 0, g.partyPartPts ?? 5);
       g.maxScoringPlaysPerGamePerDay = num("cfg-max-plays", 1, g.maxScoringPlaysPerGamePerDay || 3);
-      g.maxBetsPerGamePerDay = num("cfg-max-bets", 1, g.maxBetsPerGamePerDay || 3);
+      g.maxCheersPerGamePerDay = num("cfg-max-cheers", 1, g.maxCheersPerGamePerDay || 3);
       g.hiddenMissionPoints = num("cfg-mission-pts", 5, g.hiddenMissionPoints || 35);
-      g.redPacketPoints = num("cfg-redpacket-pts", 5, g.redPacketPoints || 50);
+      g.nyeGiftPoints = num("cfg-nyegift-pts", 5, g.nyeGiftPoints || 50);
 
       const newJoinPin = document.getElementById("cfg-join-pin")?.value.trim();
       if (newJoinPin) g.partyJoinPin = newJoinPin;
@@ -1642,7 +1697,7 @@
         next[idx].desc = String(val ?? "").trim();
       } else if (field === "scene") {
         next[idx].scene = val;
-        if (val === "red_packet") next[idx].themeType = "nye_red_packet";
+        if (val === "nye_gift") next[idx].themeType = "nye_checkin";
         else if (val !== "theme") next[idx].themeType = "";
       } else {
         next[idx][field] = val;
@@ -1709,7 +1764,7 @@
         scene: "party",
         themeType: "",
         title: "🎲 自由賽桌暖場時段",
-        desc: "自由開 1～3 分鐘賽桌對決與場邊下注！",
+        desc: "自由開 1～3 分鐘賽桌對決與場邊應援預測！",
       };
       next.splice(idx, 0, inserted);
       await window.PartyDB.upsert("config", [{ key: "schedule", value: next }]);
@@ -1818,6 +1873,15 @@
       let item = null;
       if (cat === "pollQuestions" && v("bk-f1")) {
         item = { id, q: v("bk-f1") };
+      } else if (cat === "fiveSeconds" && v("bk-f1")) {
+        const cleaned = window.PartyGamesUI?.cleanFiveSecPrompt
+          ? window.PartyGamesUI.cleanFiveSecPrompt(v("bk-f1"))
+          : v("bk-f1");
+        item = { id, prompt: cleaned || v("bk-f1") };
+      } else if (cat === "itoThemes" && v("bk-f1") && v("bk-f2") && v("bk-f3")) {
+        const lTxt = /^1\s*[:：]/.test(v("bk-f2")) ? v("bk-f2") : `1：${v("bk-f2")}`;
+        const hTxt = /^100\s*[:：]/.test(v("bk-f3")) ? v("bk-f3") : `100：${v("bk-f3")}`;
+        item = { id, title: v("bk-f1"), low: lTxt, high: hTxt };
       } else if (cat === "minorityQuestions" && v("bk-f1") && v("bk-f2") && v("bk-f3")) {
         item = { id, q: v("bk-f1"), a: v("bk-f2"), b: v("bk-f3") };
       } else if (cat === "undercoverPairs" && v("bk-f1") && v("bk-f2")) {
@@ -1928,10 +1992,10 @@
     async simulateMorning(newDayKey) {
       const ctx = window.PartyApp.getContext();
       const g = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}) };
-      const res = await window.PartyEngine.executeDailyMorningRefresh(newDayKey, ctx, { manual: true });
+      await window.PartyEngine.executeDailyMorningRefresh(newDayKey, ctx, { manual: true });
       window.PartyFX.playTone("bell");
       window.PartyApp.toast(
-        `☀️ 已切換至 ${newDayKey} 早上 08:00！重置每日 ${g.maxScoringPlaysPerGamePerDay} 次參賽/${g.maxBetsPerGamePerDay} 次下注額度，並為 ${res.toppedUpCount} 位低於 ${g.dailyFloorPoints} PT 玩家回血補滿！`
+        `☀️ 已切換至 ${newDayKey} 早上 08:00！已重置每日 ${g.maxScoringPlaysPerGamePerDay} 次參賽與 ${g.maxCheersPerGamePerDay} 次免費預測額度，並發放今日新秘密任務！`
       );
       await window.PartyApp.refreshAll();
     },

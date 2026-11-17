@@ -13,7 +13,19 @@
       .replace(/"/g, "&quot;");
   }
 
+  function getBlockedIdsSet() {
+    try {
+      const raw = localStorage.getItem("nye_blocked_uids");
+      return new Set(raw ? JSON.parse(raw) : []);
+    } catch (_) {
+      return new Set();
+    }
+  }
+
   function avatarHtml(player, size = 40) {
+    if (player && player.id && getBlockedIdsSet().has(player.id)) {
+      return `<span class="avatar-emoji" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.58)}px;">🙈</span>`;
+    }
     const name = player ? player.name : "?";
     const ch = [...name][0] || "?";
     const raw = player && player.avatar && !String(player.avatar).includes("dicebear.com")
@@ -40,6 +52,9 @@
   function setSavedPlayerId(id) {
     if (slotPrefix) sessionStorage.setItem(`${slotPrefix}player_id`, id);
     else localStorage.setItem("nye_party_player_id", id);
+    if (window.PartyFX && window.PartyFX.syncPlayerToNative) {
+      window.PartyFX.syncPlayerToNative(id);
+    }
   }
 
   const PartyApp = {
@@ -51,18 +66,19 @@
     pendingLoginAvatarUrl: "",
     loginDraftName: "",
     loginDraftPin: "",
+    showLoginPin: false,
     uploadingAvatar: false,
     currentZoomScale: 1,
     reactionTestState: { phase: "idle", fireAt: 0, lastMs: null },
     seenTableIds: new Set(),
     seenNudgeKeys: new Set(),
     seenClaimIds: new Set(),
+    seenApprovedMyClaimIds: new Set(),
+    seenThemeSessionIds: new Set(),
     shownResultSplashIds: new Set(),
     lastKnownScene: null,
     lastKnownCeremonyStage: 1,
     localCeremonyPreviewStage: 0,
-    _logoTapCount: 0,
-    _logoTapResetTimer: null,
     initializedOnce: false,
 
     data: {
@@ -75,7 +91,7 @@
       claims: [],
       claimApprovals: [],
       tables: [],
-      bets: [],
+      cheers: [],
       themeSessions: [],
       themeResponses: [],
       badgesAwarded: [],
@@ -98,7 +114,15 @@
       document.body.addEventListener("input", markDirty);
       document.body.addEventListener("change", markDirty);
       await window.PartyDB.syncClock();
+      if (window.PartyFX && window.PartyFX.syncPlayerToNative) {
+        window.PartyFX.syncPlayerToNative(getSavedPlayerId());
+      }
       await this.refreshAll(true);
+      if (this._pendingTapPayload) {
+        const queued = this._pendingTapPayload;
+        this._pendingTapPayload = null;
+        this.handleNotificationTap(queued);
+      }
 
       window.PartyDB.subscribeChanges(() => {
         this.refreshAll({ isFirst: false, background: true });
@@ -204,7 +228,7 @@
         }
       }
 
-      // 2c. 平滑更新【跨年煙火午夜盛典】倒數計時（歸零瞬間自動解鎖紅包！）
+      // 2c. 平滑更新【跨年煙火午夜盛典】倒數計時（歸零瞬間自動解鎖新年簽到禮！）
       const nyeTimer = document.getElementById("nye-live-timer");
       if (nyeTimer) {
         const targetMs = Number(nyeTimer.getAttribute("data-target-ms") || 0);
@@ -237,7 +261,7 @@
         const sec = Math.max(0, Math.ceil((until - realNow) / 1000));
         const mm = String(Math.floor(sec / 60)).padStart(2, "0");
         const ss = String(sec % 60).padStart(2, "0");
-        const nextTxt = `⏳ 集結＆下注倒數 ${mm}:${ss}`;
+        const nextTxt = `⏳ 集結＆應援倒數 ${mm}:${ss}`;
         if (el.textContent.trim() !== nextTxt) {
           el.textContent = nextTxt;
           if (sec === 0) anyJustExpired = true;
@@ -287,24 +311,11 @@
       this.render();
     },
 
-    // c-1: 隱藏一般玩家的 GM Tab，連點左上角品牌 Logo 3 下彈出主辦人控場解鎖視窗
-    handleLogoTap() {
-      this._logoTapCount = (this._logoTapCount || 0) + 1;
-      clearTimeout(this._logoTapResetTimer);
-      this._logoTapResetTimer = setTimeout(() => {
-        this._logoTapCount = 0;
-      }, 1500);
-
-      if (this._logoTapCount >= 3) {
-        this._logoTapCount = 0;
-        clearTimeout(this._logoTapResetTimer);
-        window.PartyFX.haptic("medium");
-        if (this.isGmUnlocked) {
-          this.switchTab("gm");
-          this.toast("👑 已切換至 GM 主控台！");
-        } else {
-          this.openGmUnlockModal();
-        }
+    onClickHostTab() {
+      if (this.isGmUnlocked) {
+        this.switchTab("gm");
+      } else {
+        this.openGmUnlockModal();
       }
     },
 
@@ -315,14 +326,14 @@
       modal.classList.remove("hidden");
       box.innerHTML = `
         <div class="modal-head">
-          <h3>👑 主辦人 GM 控場解鎖</h3>
+          <h3>👑 主辦人管理專區解鎖</h3>
           <button class="btn-close" onclick="PartyGamesUI.closeModal()">✕</button>
         </div>
-        <p class="muted-sm" style="margin-bottom:12px;">此區為活動主辦人專屬黑盒控場後台。請輸入 GM 控場密碼解鎖：</p>
-        <input type="password" inputmode="numeric" id="gm-unlock-modal-pin" class="input-dark" placeholder="請輸入 GM 控場密碼" onkeydown="if(event.key==='Enter') PartyApp.submitGmUnlockModal()">
+        <p class="muted-sm" style="margin-bottom:12px;">此區為活動主辦人（Host）行程、分房與題庫管理專區。請輸入主辦人通行碼解鎖：</p>
+        <input type="password" inputmode="numeric" id="gm-unlock-modal-pin" class="input-dark" placeholder="請輸入主辦人管理通行碼" onkeydown="if(event.key==='Enter') PartyApp.submitGmUnlockModal()">
         <div class="grid-2-btns" style="margin-top:12px;">
           <button class="btn btn-ghost" onclick="PartyGamesUI.closeModal()">取消</button>
-          <button class="btn btn-gold" onclick="PartyApp.submitGmUnlockModal()">🔑 解鎖進入後台</button>
+          <button class="btn btn-gold" onclick="PartyApp.submitGmUnlockModal()">🔑 解鎖進入管理專區</button>
         </div>
       `;
       setTimeout(() => document.getElementById("gm-unlock-modal-pin")?.focus(), 60);
@@ -338,10 +349,10 @@
         this.setGmUnlocked(true);
         this.switchTab("gm");
         window.PartyFX.playTone("win");
-        this.toast("👑 GM 主控台已解鎖！底部導覽列已開啟「GM控場」");
+        this.toast("👑 主辦人管理專區已解鎖！");
       } else {
         window.PartyFX.haptic("heavy");
-        this.toast("❌ GM 密碼不正確，僅限主辦人解鎖！");
+        this.toast("❌ 主辦人通行碼不正確！");
       }
     },
 
@@ -351,28 +362,117 @@
       this.render();
     },
 
-    showRedPacketSplash(pts, eventTitle) {
+    onNativeResume(seenKeysObj = null) {
+      try {
+        const parsed =
+          typeof seenKeysObj === "string" && seenKeysObj
+            ? JSON.parse(seenKeysObj)
+            : seenKeysObj;
+        if (parsed && typeof parsed === "object") {
+          (parsed.tables || []).forEach((id) => this.seenTableIds.add(id));
+          (parsed.nudges || []).forEach((k) => this.seenNudgeKeys.add(k));
+          (parsed.claims || []).forEach((id) => this.seenClaimIds.add(id));
+          (parsed.approvedClaims || []).forEach((id) => this.seenApprovedMyClaimIds.add(id));
+          (parsed.themes || []).forEach((id) => this.seenThemeSessionIds.add(id));
+        }
+      } catch (_) {}
+      if (window.PartyDB && window.PartyDB.invalidateCacheAndSync) {
+        window.PartyDB.invalidateCacheAndSync();
+      } else {
+        this.refreshAll({ isFirst: false, background: true });
+      }
+    },
+
+    async handleNotificationTap(rawPayload) {
+      if (!rawPayload) return;
+      if (!this.initializedOnce) {
+        this._pendingTapPayload = rawPayload;
+        return;
+      }
+      let target = rawPayload;
+      if (typeof rawPayload === "string") {
+        try {
+          target = JSON.parse(rawPayload);
+        } catch (_) {
+          return;
+        }
+      }
+      if (!target || typeof target !== "object") return;
+      this.closeResultSplash();
+      window.PartyGamesUI?.closeModal();
+
+      await this.refreshAll({ isFirst: false, background: false });
+      const action = target.action || "";
+
+      if (action === "open_table" && target.tableId) {
+        const tbl = (this.data.tables || []).find((t) => t.id === target.tableId);
+        this.tab = "stage";
+        this.render();
+        if (tbl && tbl.status === "finished") {
+          this.openTableHistoryModal(tbl.id);
+        } else if (tbl && tbl.status !== "cancelled") {
+          window.PartyGamesUI?.openRoomWindow(tbl.id);
+        } else {
+          this.toast("ℹ️ 該賽桌已結束或已取消！");
+        }
+        return;
+      }
+
+      if (action === "verify_claim" && target.claimId) {
+        if (window.PartyGamesUI?.activeRoomTableId) {
+          window.PartyGamesUI.minimizeRoomWindow();
+        }
+        this.tab = "stage";
+        this.render();
+        setTimeout(() => {
+          const cardEl = document.getElementById(`verify-card-${target.claimId}`);
+          if (cardEl) {
+            cardEl.scrollIntoView({ behavior: "smooth", block: "center" });
+            cardEl.classList.add("pulse-focus");
+            setTimeout(() => cardEl.classList.remove("pulse-focus"), 2400);
+          } else {
+            this.openClaimDetailModal(target.claimId);
+          }
+        }, 80);
+        return;
+      }
+
+      if (action === "open_claim_detail" && target.claimId) {
+        if (window.PartyGamesUI?.activeRoomTableId) {
+          window.PartyGamesUI.minimizeRoomWindow();
+        }
+        this.tab = "dashboard";
+        this.render();
+        setTimeout(() => this.openClaimDetailModal(target.claimId), 80);
+        return;
+      }
+
+      if (action === "open_stage") {
+        if (window.PartyGamesUI?.activeRoomTableId) {
+          window.PartyGamesUI.minimizeRoomWindow();
+        }
+        this.switchTab("stage");
+      }
+    },
+
+    showNyeGiftSplash(pts, eventTitle) {
       const el = document.getElementById("result-splash");
       const card = document.getElementById("result-splash-card");
       if (!el || !card) return;
       card.style.borderColor = "#fde047";
       card.innerHTML = `
-        <div style="font-size:52px;line-height:1.1;margin-bottom:6px;">🧧🧨🎆</div>
-        <div class="muted-xs" style="color:#fde047;margin-bottom:4px;">《${esc(eventTitle || "跨年英雄紀元")}》午夜開運禮</div>
-        <h3 style="font-size:23px;color:#fff;margin-bottom:8px;">🎉 恭喜發財・新年快樂！</h3>
+        <div style="font-size:52px;line-height:1.1;margin-bottom:6px;">🎆🥂🎉</div>
+        <div class="muted-xs" style="color:#fde047;margin-bottom:4px;">《${esc(eventTitle || "跨年英雄紀元")}》午夜紀念禮</div>
+        <h3 style="font-size:23px;color:#fff;margin-bottom:8px;">🎉 新年快樂 Happy New Year！</h3>
         <div class="badge-pill pill-gold" style="font-size:18px;padding:9px 20px;margin:8px 0 14px;">
-          ✨ 開運紅包入帳 +${window.PartyEngine.fmtPt(pts)} PT！
+          ✨ 新年開運簽到禮入帳 +${window.PartyEngine.fmtPt(pts)} PT！
         </div>
-        <button class="btn btn-gold btn-sm" style="min-width:150px;" onclick="PartyApp.closeResultSplash()">
-          太讚啦！(3.5秒自動關閉)
+        <button class="btn btn-gold btn-sm" style="min-width:160px;" onclick="PartyApp.closeResultSplash()">
+          ✕ 關閉視窗
         </button>
-        <div class="result-splash-bar"></div>
       `;
       el.classList.remove("hidden");
       clearTimeout(this._resultSplashTimer);
-      this._resultSplashTimer = setTimeout(() => {
-        this.closeResultSplash();
-      }, 3500);
     },
 
     switchTab(t, anchorId = "") {
@@ -535,10 +635,10 @@
           .join(" ｜ ");
       }
 
-      // 3. 計算我個人的積分淨變化 (參賽 + 下注)
+      // 3. 計算我個人的積分淨變化 (參賽 + 場邊應援)
       const myPart = (table.participants || []).find((p) => p.id === myId);
-      const myBet = (this.data.bets || []).find(
-        (b) => b.table_id === table.id && b.bettor_id === myId
+      const myCheer = (this.data.cheers || []).find(
+        (c) => c.table_id === table.id && c.supporter_id === myId
       );
       const myEntries = (this.data.ledger || []).filter(
         (e) => e.player_id === myId && e.meta && e.meta.tableId === table.id
@@ -548,7 +648,7 @@
       let myResultPill = "";
       let borderColor = "var(--gold)";
       if (table.is_test_run) {
-        myResultPill = `<div class="badge-pill pill-cyan" style="font-size:14px;padding:6px 14px;">🧪 新手免費測試局：0 PT（不扣不加）</div>`;
+        myResultPill = `<div class="badge-pill pill-cyan" style="font-size:14px;padding:6px 14px;">🧪 免費練習局：0 PT（不扣不加）</div>`;
       } else if (myPart && !myPart.isScoring) {
         const iWon = realWinIds.includes(myId);
         myResultPill = `<div class="badge-pill pill-cyan" style="font-size:14px;padding:6px 14px;">🤝 陪玩局（${iWon ? "獲勝" : "完賽"}）：0 PT（未滿額對手照常計分！）</div>`;
@@ -556,12 +656,16 @@
         myResultPill = `<div class="badge-pill pill-gold" style="font-size:16px;padding:7px 16px;">🎉 你的本局戰果：+${window.PartyEngine.fmtPt(netDelta)} PT！</div>`;
         borderColor = "#fbbf24";
       } else if (netDelta < 0) {
-        myResultPill = `<div class="badge-pill pill-fire" style="font-size:15px;padding:7px 16px;">💸 你的本局戰果：${window.PartyEngine.fmtPt(netDelta)} PT</div>`;
+        myResultPill = `<div class="badge-pill pill-fire" style="font-size:15px;padding:7px 16px;">📊 你的本局戰果：${window.PartyEngine.fmtPt(netDelta)} PT</div>`;
         borderColor = "#fb7185";
-      } else if (myBet && myBet.status === "refunded") {
-        myResultPill = `<div class="badge-pill" style="font-size:14px;padding:6px 14px;">↩️ 場邊押注平手／單邊已全額退回（0 PT）</div>`;
+      } else if (myCheer && myCheer.status === "refunded") {
+        myResultPill = `<div class="badge-pill" style="font-size:14px;padding:6px 14px;">⚖️ 本局平手／並列，應援預測不計勝負（0 PT）</div>`;
+      } else if (myCheer && myCheer.status === "lost") {
+        myResultPill = `<div class="badge-pill" style="font-size:14px;padding:6px 14px;">📣 本次應援未命中：0 PT（免費不扣分！）</div>`;
+      } else if (!myPart && !myCheer) {
+        myResultPill = `<div class="badge-pill pill-cyan" style="font-size:14px;padding:6px 14px;">👀 觀戰完賽結算（0 PT）</div>`;
       } else {
-        myResultPill = `<div class="badge-pill" style="font-size:14px;padding:6px 14px;">⚖️ 本局損益：0 PT（本金退回）</div>`;
+        myResultPill = `<div class="badge-pill" style="font-size:14px;padding:6px 14px;">👏 完賽結算：+${window.PartyEngine.fmtPt(netDelta)} PT</div>`;
       }
 
       card.style.borderColor = borderColor;
@@ -574,30 +678,32 @@
             ? `<div class="muted-sm" style="background:rgba(9,13,24,0.65);border-radius:10px;padding:7px 10px;margin-bottom:12px;font-size:12.5px;">${esc(detailTxt)}</div>`
             : ""
         }
-        <div style="margin:8px 0 12px;">${myResultPill}</div>
-        <button class="btn btn-gold btn-sm" style="min-width:140px;" onclick="PartyApp.closeResultSplash()">
-          繼續開玩 (3秒自動關閉)
-        </button>
-        <div class="result-splash-bar"></div>
+        <div style="margin:8px 0 14px;">${myResultPill}</div>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+          <button class="btn btn-secondary btn-sm" onclick="PartyApp.closeResultSplash();PartyApp.openTableHistoryModal('${esc(table.id)}')">
+            📜 詳細回顧
+          </button>
+          <button class="btn btn-gold btn-sm" style="min-width:130px;" onclick="PartyApp.closeResultSplash()">
+            ✕ 關閉視窗
+          </button>
+        </div>
       `;
 
       el.classList.remove("hidden");
       this._splashKind = "final";
       card.classList.remove("fx-win", "fx-lose", "fx-neutral");
       const iWonTable = realWinIds.includes(myId) && !isCoopFail;
-      const myBetWon = myBet && myBet.status === "won";
-      if (netDelta > 0 || iWonTable || myBetWon) {
+      const myCheerWon = myCheer && myCheer.status === "won";
+      if (netDelta > 0 || iWonTable || myCheerWon) {
         window.PartyFX.playTone("win");
-        window.PartyFX.launchFireworksShow({ redPackets: false, durationMs: 2600 });
-      } else if ((myPart && !isPvpTie) || (myBet && myBet.status === "lost")) {
+        window.PartyFX.launchFireworksShow({ celebration: false, durationMs: 2600 });
+      } else if ((myPart && !isPvpTie) || (myCheer && myCheer.status === "lost")) {
         window.PartyFX.playTone("thunder");
         window.PartyFX.launchLightningShow({ durationMs: 1600 });
       }
       window.PartyFX.haptic(netDelta > 0 ? "heavy" : "medium");
+      // j: 不再 3 秒自動關閉，讓玩家看完自己按關閉！
       clearTimeout(this._resultSplashTimer);
-      this._resultSplashTimer = setTimeout(() => {
-        this.closeResultSplash();
-      }, 3000);
     },
 
     async refreshAll(opts = false) {
@@ -620,7 +726,7 @@
           claims,
           claimApprovals,
           tables,
-          bets,
+          cheers,
           themeSessions,
           themeResponses,
           badgesAwarded,
@@ -632,7 +738,7 @@
           window.PartyDB.select("claims", "order=created_at.desc"),
           window.PartyDB.select("claim_approvals"),
           window.PartyDB.select("tables", "order=created_at.desc"),
-          window.PartyDB.select("bets", "order=created_at.desc"),
+          window.PartyDB.select("cheers", "order=created_at.desc"),
           window.PartyDB.select("theme_sessions", "order=created_at.desc"),
           window.PartyDB.select("theme_responses"),
           window.PartyDB.select("badges_awarded", "order=created_at.desc"),
@@ -668,7 +774,7 @@
           claims: claims || [],
           claimApprovals: claimApprovals || [],
           tables: tables || [],
-          bets: bets || [],
+          cheers: cheers || [],
           themeSessions: themeSessions || [],
           themeResponses: themeResponses || [],
           badgesAwarded: badgesAwarded || [],
@@ -688,7 +794,13 @@
             }
             if (t.status === "finished") this.shownResultSplashIds.add(t.id);
           });
-          (this.data.claims || []).forEach((c) => this.seenClaimIds.add(c.id));
+          (this.data.claims || []).forEach((c) => {
+            this.seenClaimIds.add(c.id);
+            if (c.applicant_id === initMyId && c.status === "approved") {
+              this.seenApprovedMyClaimIds.add(c.id);
+            }
+          });
+          (this.data.themeSessions || []).forEach((s) => this.seenThemeSessionIds.add(s.id));
           this.detectRoundResultFx(initMyId);
           this.lastKnownCeremonyStage = Number(this.data.globalCfg?.ceremonyStage) || 1;
           const effInit = window.PartyEngine.getEffectiveNowMs(
@@ -706,15 +818,20 @@
           this.detectRealtimeNotifications();
         }
 
-        // 檢查單機裝置綁定鎖：若已開啟單機鎖且此帳號已被綁定至另一台裝置，自動退出防止雙機重登
+        // c: 當 GM 刪除帳號時，立即向雲端確認一次，若真的已刪除則當場無延遲退出回註冊頁重建名字！
         const myIdCheck = getSavedPlayerId();
         if (myIdCheck && (this.data.players || []).length > 0) {
           const meRowDel = (this.data.players || []).find((p) => p.id === myIdCheck);
-          this._missingMeCount = meRowDel ? 0 : (this._missingMeCount || 0) + 1;
-          if (this._missingMeCount >= 2) {
-            this._missingMeCount = 0;
-            this.logoutSwitchAccount();
-            this.toast("🗑️ 此帳號已被 GM 刪除，請重新建立你的英雄暱稱！");
+          if (!meRowDel) {
+            const verifyRows = await window.PartyDB.select(
+              "players",
+              `id=eq.${encodeURIComponent(myIdCheck)}`,
+              { forceNetwork: true }
+            ).catch(() => null);
+            if (Array.isArray(verifyRows) && verifyRows.length === 0) {
+              this.logoutSwitchAccount();
+              this.toast("🗑️ 此帳號已被 GM 移除，請重新輸入新暱稱建立角色！");
+            }
           }
         }
         if (myIdCheck && this.data.globalCfg.enforceDeviceLock) {
@@ -770,7 +887,7 @@
           try {
             let changed = false;
             const dayKey = this.data.globalCfg.activeDayKey || "2026-12-31";
-            const initPts = Number(this.data.globalCfg.initialPoints) || 300;
+            const initPts = Number(this.data.globalCfg.initialPoints ?? 100);
             const existingInitIds = new Set(
               (this.data.ledger || [])
                 .filter((l) => String(l.id || "").startsWith("init_300_"))
@@ -853,7 +970,7 @@
           }
         }
 
-        // ☀️ 自動檢查每日早上 08:00 跨日刷新（自動重置 3 次參賽/下注額度 + 低於 300 PT 自動補滿 + 發新任務）
+        // ☀️ 自動檢查每日早上 08:00 跨日刷新（自動重置 3 次參賽/應援預測額度 + 低於 300 PT 自動補滿 + 發新任務）
         const myId = getSavedPlayerId();
         if (
           myId &&
@@ -901,11 +1018,13 @@
           }
         }
 
-        // 背景同步若使用者正在輸入文字框，暫緩整頁重繪以免收起手機鍵盤或洗掉打到一半的字！
-        // 特別保護登入頁 (!myId)：未登入時背景輪詢若無新夥伴名單變化，100% 不觸發重繪，杜絕輸入名稱切密碼框時被清空！
+        // 背景同步若使用者正在輸入表單文字框，暫緩整頁重繪以免收起手機鍵盤！
+        // 但若焦點在對戰室內的回合輸入框（如 #bomb-val-...），絕不阻擋回合刷新以免卡死畫面！
         const activeEl = document.activeElement;
+        const inRoomInput = Boolean(activeEl && activeEl.closest && activeEl.closest("#game-room-overlay"));
         const isTyping =
           isBackground &&
+          !inRoomInput &&
           activeEl &&
           (activeEl.tagName === "INPUT" ||
             activeEl.tagName === "TEXTAREA" ||
@@ -993,7 +1112,7 @@
       if (kind === "win") {
         window.PartyFX.playTone("win");
         window.PartyFX.haptic("heavy");
-        window.PartyFX.launchFireworksShow({ redPackets: false, durationMs: Math.max(1500, ms) });
+        window.PartyFX.launchFireworksShow({ celebration: false, durationMs: Math.max(1500, ms) });
       } else if (kind === "lose") {
         window.PartyFX.playTone("thunder");
         window.PartyFX.haptic("heavy");
@@ -1014,49 +1133,94 @@
       (this.data.ledger || []).forEach((l) => (ledgerById[l.id] = l));
       const events = [];
 
-      // A. 自由賽桌小遊戲每回合結果
+      // A. 自由賽桌小遊戲每回合結果（參賽選手、場邊應援觀眾與正在房內觀戰者同步看到！）
       for (const t of this.data.tables || []) {
         if (t.status !== "playing") continue;
-        const meP = (t.participants || []).find((p) => p.id === myId);
-        if (!meP || meP.forfeited) continue;
+        const meP = (t.participants || []).find((p) => p.id === myId && !p.forfeited);
+        const amWatching = window.PartyGamesUI?.activeRoomTableId === t.id;
+        const myCheer = (this.data.cheers || []).find(
+          (c) => c.table_id === t.id && c.supporter_id === myId
+        );
+        if (!meP && !amWatching && !myCheer) continue;
         const gs = t.game_state || {};
         if (t.game_type === "rps_king" && gs.lastRound && gs.lastRound.seq) {
           const w = gs.lastRound.winnerId;
+          const pName = (t.participants || []).find((p) => p.id === w)?.name || "";
           events.push({
             key: `${t.id}_rps_${gs.lastRound.seq}`,
-            kind: !w ? "neutral" : w === myId ? "win" : "lose",
-            icon: !w ? "🤝" : w === myId ? "🎆" : "⚡",
-            title: !w ? "平手！再出一拳" : w === myId ? "這拳你贏了！" : "這拳輸了…",
+            kind: !w ? "neutral" : meP ? (w === myId ? "win" : "lose") : "neutral",
+            icon: !w ? "🤝" : !meP ? "✊" : w === myId ? "🎆" : "⚡",
+            title: !w
+              ? "平手！再出一拳"
+              : meP
+              ? w === myId
+                ? "這拳你贏了！"
+                : "這拳輸了…"
+              : `本拳由 ${pName} 拿下！`,
             detail: gs.lastRound.msg || "",
             ms: 1500,
           });
+        } else if (t.game_type === "quick_draw" && gs.lastRound && gs.lastRound.seq) {
+          const w = gs.lastRound.winnerId;
+          events.push({
+            key: `${t.id}_qd_${gs.lastRound.seq}`,
+            kind: !w ? "neutral" : meP ? (w === myId ? "win" : "lose") : "neutral",
+            icon: !w ? "⚡" : meP && w === myId ? "🎆" : "⚡",
+            title: !w
+              ? "本把重賽！"
+              : meP
+              ? w === myId
+                ? "這把你最快！拿下 1 勝"
+                : "對手先搶下 1 勝！"
+              : "本把毫秒勝負揭曉！",
+            detail: gs.lastRound.msg || "",
+            ms: 1650,
+          });
         } else if (t.game_type === "soul_sync_2v2" && gs.lastQResult) {
-          const hit = meP.team === "team_B" ? gs.lastQResult.hitB : gs.lastQResult.hitA;
+          const hit = meP
+            ? meP.team === "team_B"
+              ? gs.lastQResult.hitB
+              : gs.lastQResult.hitA
+            : gs.lastQResult.hitA || gs.lastQResult.hitB;
           events.push({
             key: `${t.id}_ss_${gs.lastQResult.qIdx}`,
-            kind: hit ? "win" : "lose",
+            kind: meP ? (hit ? "win" : "lose") : "neutral",
             icon: hit ? "💞" : "⚡",
-            title: hit ? `第 ${gs.lastQResult.qIdx + 1} 題默契命中！` : `第 ${gs.lastQResult.qIdx + 1} 題沒對上…`,
-            detail: `🅰️ ${(gs.scores || {}).team_A || 0} 題${(t.participants || []).length > 2 ? ` vs 🅱️ ${(gs.scores || {}).team_B || 0} 題` : ""}`,
-            ms: 1500,
+            title: meP
+              ? hit
+                ? `第 ${gs.lastQResult.qIdx + 1} 題默契命中！`
+                : `第 ${gs.lastQResult.qIdx + 1} 題沒對上…`
+              : `第 ${gs.lastQResult.qIdx + 1} 題開牌！`,
+            detail:
+              gs.lastQResult.summaryTxt ||
+              `🅰️ ${(gs.scores || {}).team_A || 0} 題${(t.participants || []).length > 2 ? ` vs 🅱️ ${(gs.scores || {}).team_B || 0} 題` : ""}`,
+            ms: 1600,
           });
         } else if (t.game_type === "number_bomb" && gs.lastBoom && gs.lastBoom.seq) {
           const isMe = gs.lastBoom.id === myId;
           events.push({
             key: `${t.id}_bomb_${gs.lastBoom.seq}`,
-            kind: isMe ? "lose" : "win",
+            kind: meP ? (isMe ? "lose" : "win") : "neutral",
             icon: isMe ? "💥" : "🎆",
-            title: isMe ? "踩中炸彈淘汰！" : "有人踩雷，你安全存活！",
+            title: meP ? (isMe ? "踩中炸彈淘汰！" : "有人踩雷，你安全存活！") : "炸彈引爆啦！",
             detail: gs.lastLog || "",
             ms: 1700,
           });
-        } else if (t.game_type === "five_seconds" && gs.lastJudge && gs.lastJudge.playerId === myId) {
+        } else if (
+          t.game_type === "five_seconds" &&
+          gs.lastJudge &&
+          (gs.lastJudge.playerId === myId || !meP)
+        ) {
           events.push({
             key: `${t.id}_fs_${gs.lastJudge.turn}`,
-            kind: gs.lastJudge.passed ? "win" : "lose",
+            kind: meP ? (gs.lastJudge.passed ? "win" : "lose") : "neutral",
             icon: gs.lastJudge.passed ? "🎆" : "⚡",
-            title: gs.lastJudge.passed ? "成功講滿 3 個！+1 分" : "卡詞超時，這輪 0 分",
-            detail: "",
+            title: meP
+              ? gs.lastJudge.passed
+                ? "成功講滿 3 個！+1 分"
+                : "挑戰失敗，這輪 0 分"
+              : gs.lastJudge.summary || "本輪判定完成",
+            detail: meP ? gs.lastJudge.summary || "" : "",
             ms: 1500,
           });
         }
@@ -1170,9 +1334,10 @@
           if (t.status === "open" && t.host_id !== myId) {
             window.PartyFX.notify(
               `🔥 房主【${hostName}】開新賽桌囉！`,
-              `【${hostName}】正在揪團玩「${t.title}」，快進來參賽或場邊下注！`
+              `【${hostName}】正在揪團玩「${t.title}」，點此直接進房參賽或場邊應援！`,
+              { action: "open_table", tableId: t.id }
             );
-            this.toast(`🔥 房主【${hostName}】開桌：【${t.title}】快去參賽或下注！`);
+            this.toast(`🔥 房主【${hostName}】開桌：【${t.title}】快去參賽或場邊應援！`);
           }
         } else if (t.status === "open" && t.game_state?.lastNudgeAt) {
           const nudgeKey = `${myId}_${t.id}_${t.game_state.lastNudgeAt}`;
@@ -1192,7 +1357,8 @@
                   : `目前 ${(t.participants || []).length}/${gm.maxPlayers} 人即將開戰`;
               window.PartyFX.notify(
                 `📢 房主【${nudger}】緊急催人進房！`,
-                `【${nudger}】在「${t.title}」呼喚大家加入（${needTxt}）！`
+                `【${nudger}】在「${t.title}」呼喚大家加入（${needTxt}），點此直達房間！`,
+                { action: "open_table", tableId: t.id }
               );
               this.toast(`📢 房主【${nudger}】催人進房：【${t.title}】（${needTxt}）！`);
             }
@@ -1201,16 +1367,31 @@
         if (t.status === "finished" && !this.shownResultSplashIds.has(t.id)) {
           this.shownResultSplashIds.add(t.id);
           const amParticipant = (t.participants || []).some((p) => p.id === myId);
-          const amBettor = (this.data.bets || []).some(
-            (b) => b.table_id === t.id && b.bettor_id === myId
+          const amSupporter = (this.data.cheers || []).some(
+            (c) => c.table_id === t.id && c.supporter_id === myId
           );
-          if (amParticipant || amBettor) {
+          const amWatchingRoom = window.PartyGamesUI?.activeRoomTableId === t.id;
+          if (amParticipant || amSupporter || amWatchingRoom) {
             this.showTableResultSplash(t);
           }
         }
       }
 
-      // 1b. 終局頒獎典禮揭曉第 4 幕（總冠軍登基）全場同步放煙火！
+      // 1b. 主題遊戲新開房推播 ＆ 終局頒獎典禮揭曉第 4 幕放煙火！
+      for (const s of this.data.themeSessions || []) {
+        if (!this.seenThemeSessionIds.has(s.id)) {
+          this.seenThemeSessionIds.add(s.id);
+          if (s.status !== "finished" && s.host_id !== myId) {
+            const meta = (window.ThemeGamesUI?.THEME_LIST || []).find((x) => x.id === s.theme_type);
+            window.PartyFX.notify(
+              `🎪 主題遊戲【${meta?.name || "團康活動"}】開房囉！`,
+              "Host 已開啟主題房間，點此立即前往加入！",
+              { action: "open_stage" }
+            );
+          }
+        }
+      }
+
       this.detectRoundResultFx(myId);
       const curCeremonyStage = Number(this.data.globalCfg?.ceremonyStage) || 1;
       if (curCeremonyStage !== this.lastKnownCeremonyStage) {
@@ -1219,11 +1400,11 @@
         if (curCeremonyStage === 4 && prevStage < 4) {
           window.PartyFX.playTone("win");
           window.PartyFX.haptic("heavy");
-          window.PartyFX.launchFireworksShow({ redPackets: false, durationMs: 3800 });
+          window.PartyFX.launchFireworksShow({ celebration: false, durationMs: 3800 });
         }
       }
 
-      // 2. 有人請我幫忙按見證／當事人認證提醒
+      // 2. 有人請我幫忙按見證／當事人認證提醒 ＋ 我申請的任務剛認證通過入帳通知！
       for (const c of this.data.claims || []) {
         if (!this.seenClaimIds.has(c.id)) {
           this.seenClaimIds.add(c.id);
@@ -1234,10 +1415,25 @@
             const appPlayer = this.data.players.find((p) => p.id === c.applicant_id);
             window.PartyFX.notify(
               "🕵️ 收到好友認證請求！",
-              `${appPlayer?.name || "朋友"} 請你幫忙確認「${c.title}」！`
+              `${appPlayer?.name || "朋友"} 請你幫忙確認「${c.title}」，點此直接幫他認證！`,
+              { action: "verify_claim", claimId: c.id }
             );
             this.toast(`🕵️ ${appPlayer?.name || "朋友"} 請你確認「${c.title}」！`);
           }
+        }
+        if (
+          c.applicant_id === myId &&
+          c.status === "approved" &&
+          !this.seenApprovedMyClaimIds.has(c.id)
+        ) {
+          this.seenApprovedMyClaimIds.add(c.id);
+          window.PartyFX.playTone("win");
+          window.PartyFX.notify(
+            `🎉 認證通過！+${c.points} PT 已入帳！`,
+            `你的「${c.title}」已完成見證認證，點此查看入帳與投票明細！`,
+            { action: "open_claim_detail", claimId: c.id }
+          );
+          this.toast(`🎉 恭喜！「${c.title}」認證通過，立即入帳 +${c.points} PT！`);
         }
       }
 
@@ -1280,7 +1476,9 @@
       if (sceneChanged) {
         const prev = this.lastKnownScene;
         this.lastKnownScene = sc.scene;
-        window.PartyFX.notify("⏰ 活動場景切換！", `目前已進入：${sc.label}`);
+        window.PartyFX.notify("⏰ 活動場景切換！", `目前已進入：${sc.label}`, {
+          action: "open_stage",
+        });
         this.toast(`⏰ 時段切換：${sc.label}`);
         // 若剛從開賽前進入開賽，或剛進入終局結算，立即觸發 refreshAll 執行自動發分／自動結算！
         if (prev === "pre_event" || sc.scene === "viewer") {
@@ -1412,7 +1610,7 @@
       const nextMainHtml = `
         <header class="top-bar">
           <div class="brand-row">
-            <span class="brand-logo" onclick="PartyApp.handleLogoTap()" title="主辦人連點 3 下可解鎖控場後台">🥂 ${esc(evTitle)}</span>
+            <span class="brand-logo">🥂 ${esc(evTitle)}</span>
             <div class="top-status-group">
               ${myPtBadgeHtml}
               <span class="scene-indicator sc-${ctx.sceneInfo.scene}">${esc(ctx.sceneInfo.label)}</span>
@@ -1432,7 +1630,7 @@
           }
         </main>
 
-        <nav class="bottom-nav ${this.isGmUnlocked ? "" : "cols-2"}">
+        <nav class="bottom-nav">
           <button class="nav-item ${this.tab === "stage" ? "active" : ""}" onclick="PartyApp.switchTab('stage')">
             <span class="nav-icon">🎮${badgeDot}</span>
             <span>遊戲舞台</span>
@@ -1441,14 +1639,10 @@
             <span class="nav-icon">🏠</span>
             <span>個人主頁</span>
           </button>
-          ${
-            this.isGmUnlocked
-              ? `<button class="nav-item ${this.tab === "gm" ? "active" : ""}" onclick="PartyApp.switchTab('gm')">
-                   <span class="nav-icon">👑</span>
-                   <span>GM控場</span>
-                 </button>`
-              : ""
-          }
+          <button class="nav-item ${this.tab === "gm" ? "active" : ""}" onclick="PartyApp.onClickHostTab()">
+            <span class="nav-icon">👑</span>
+            <span>主辦人</span>
+          </button>
         </nav>
       `;
 
@@ -1532,21 +1726,16 @@
       return `
         <div class="onboard-wrap">
           <div class="onboard-card">
-            <div class="eyebrow-tag">🎉 ${esc(dateRangeStr)} 派對專屬</div>
+            <div class="eyebrow-tag">🎉 ${esc(dateRangeStr)} 團康派對</div>
             <h1 style="font-size:28px;margin:10px 0 4px;">《${esc(evTitle)}》</h1>
             <p class="muted-sm" style="margin-bottom:14px;">
-              上傳你的個人大頭貼並輸入暱稱與派對 PIN 碼登入（登入後將自動記住這支手機，滑掉重開或誤登出輸入同暱稱即可連回！）
+              設定個人大頭貼並輸入暱稱與房間通行碼即可加入派對（登入後自動記住本機角色，隨時可於個人主頁管理或刪除帳號）
             </p>
 
             ${
               this.dbConnectError
                 ? `<div class="toast-inline" style="margin-bottom:12px;border-color:rgba(251,113,133,0.55);color:#fda4af;text-align:left;">
-                     ⚠️ <b>尚未連上雲端資料庫</b>：請確認網路連線，或檢查 Firebase Realtime Database 網址與規則設定。
-                     ${
-                       window.NYEPartyBridge && window.NYEPartyBridge.postMessage
-                         ? `<button type="button" class="btn btn-secondary btn-xs" style="width:100%;margin-top:6px;" onclick="window.NYEPartyBridge.postMessage(JSON.stringify({type:'switch_server'}))">🔥 點此設定／修改 Firebase 資料庫網址</button>`
-                         : ""
-                     }
+                     ⚠️ <b>尚未連上雲端同步服務</b>：請確認行動網路或 Wi-Fi 連線正常後重新整理。
                    </div>`
                 : ""
             }
@@ -1582,8 +1771,14 @@
                 <input type="text" id="login-name" class="input-dark" maxlength="16" value="${esc(this.loginDraftName || "")}" oninput="PartyApp.loginDraftName=this.value" onchange="PartyApp.loginDraftName=this.value" placeholder="例如：Kerker / 小明">
               </div>
               <div>
-                <label class="sub-label">派對登入 PIN 碼（輸入主辦人給的 4 碼 PIN）</label>
-                <input type="password" inputmode="numeric" id="login-pin" class="input-dark" maxlength="8" value="${esc(this.loginDraftPin || "")}" oninput="PartyApp.loginDraftPin=this.value" onchange="PartyApp.loginDraftPin=this.value" placeholder="輸入 4 碼通行 PIN（如 ${esc(joinPinHint)}）" onkeydown="if(event.key==='Enter') PartyApp.submitLogin()">
+                <label class="sub-label">房間通行碼 Room Code（請輸入主辦人提供的 4 碼通行碼）</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <input type="${this.showLoginPin ? "text" : "password"}" inputmode="numeric" id="login-pin" class="input-dark" style="flex:1;" maxlength="8" value="${esc(this.loginDraftPin || "")}" oninput="PartyApp.loginDraftPin=this.value" onchange="PartyApp.loginDraftPin=this.value" placeholder="請輸入房間通行碼" onkeydown="if(event.key==='Enter') PartyApp.submitLogin()">
+                  <button type="button" class="btn btn-secondary btn-sm" style="flex-shrink:0;padding:10px 12px;" onclick="PartyApp.toggleLoginPinVisibility()">
+                    ${this.showLoginPin ? "🙈 隱藏" : "👁️ 顯示"}
+                  </button>
+                </div>
+                <div class="muted-xs" style="margin-top:3px;">※ 此為同房間統一通行碼，並非個人帳號密碼。</div>
               </div>
               <button class="btn btn-gold" style="width:100%;margin-top:6px;padding:13px;font-size:16px;" onclick="PartyApp.submitLogin()">
                 🚀 進入《${esc(evTitle)}》！
@@ -1606,6 +1801,11 @@
                   </div>`
                 : ""
             }
+
+            <div class="muted-xs" style="margin-top:16px;padding-top:10px;border-top:1px dashed rgba(148,163,184,0.22);line-height:1.55;text-align:left;">
+              🛡️ <b>純娛樂聲明與社群守則</b>：本 App 所有榮譽積分（PT）均由系統免費正向發放（免押分、不倒扣、無任何金錢交易或獎品兌換）。進入活動即代表同意遵守友善聚會守則，禁止上傳不當或冒犯性圖文（夥伴牆內建隱藏與檢舉機制）。
+              <a href="privacy.html" target="_blank" rel="noopener" style="color:#38bdf8;text-decoration:underline;margin-left:4px;">隱私權政策與服務條款</a>
+            </div>
           </div>
         </div>
       `;
@@ -1639,6 +1839,29 @@
       this.render();
     },
 
+    toggleLoginPinVisibility() {
+      const curN = document.getElementById("login-name");
+      const curP = document.getElementById("login-pin");
+      if (curN) this.loginDraftName = curN.value;
+      if (curP) this.loginDraftPin = curP.value;
+      this.showLoginPin = !this.showLoginPin;
+      this.render();
+    },
+
+    formatShortTime(isoOrMs) {
+      const ms = typeof isoOrMs === "number" ? isoOrMs : Date.parse(String(isoOrMs || ""));
+      if (!Number.isFinite(ms)) return "";
+      const p = window.PartyEngine.taipeiParts(ms);
+      return `${p.mm}/${p.dd} ${p.hh}:${p.mi}`;
+    },
+
+    formatFullTime(isoOrMs) {
+      const ms = typeof isoOrMs === "number" ? isoOrMs : Date.parse(String(isoOrMs || ""));
+      if (!Number.isFinite(ms)) return "時間未詳";
+      const p = window.PartyEngine.taipeiParts(ms);
+      return `${p.yyyy}/${p.mm}/${p.dd} (${p.wk}) ${p.hh}:${p.mi}:${p.ss}`;
+    },
+
     normalizePlayerName(raw) {
       return String(raw || "")
         .normalize("NFKC")
@@ -1648,6 +1871,13 @@
         .toLowerCase();
     },
 
+    normalizePinCode(raw) {
+      return String(raw || "")
+        .normalize("NFKC")
+        .replace(/[\u200B-\u200D\uFEFF\s]/g, "")
+        .trim();
+    },
+
     async submitLogin() {
       if (this._loginBusy) return;
       const name = String(document.getElementById("login-name")?.value ?? this.loginDraftName ?? "")
@@ -1655,18 +1885,32 @@
         .replace(/[\u200B-\u200D\uFEFF]/g, "")
         .replace(/\s+/g, " ")
         .trim();
-      const rawPin = (document.getElementById("login-pin")?.value ?? this.loginDraftPin ?? "").trim();
+      const rawInputPin = String(document.getElementById("login-pin")?.value ?? this.loginDraftPin ?? "");
+      const pin = this.normalizePinCode(rawInputPin);
       this.loginDraftName = name;
-      this.loginDraftPin = rawPin;
+      this.loginDraftPin = rawInputPin;
       if (!name) {
         this.toast("請輸入你的暱稱 ID！");
         return;
       }
+      if (!pin) {
+        this.toast("🔑 請輸入主辦人提供的派對通行 PIN 碼才能登入喔！");
+        document.getElementById("login-pin")?.focus();
+        return;
+      }
       this._loginBusy = true;
       try {
-        const g = { ...CFG.DEFAULTS, ...(this.data.globalCfg || {}) };
-        const partyPin = String(g.partyJoinPin || "1234").trim();
-        const pin = rawPin || partyPin;
+        // 先即時從雲端確認最新派對 PIN 碼設定（防止快取舊 PIN 導致登入失敗）
+        let freshGlobal = this.data.globalCfg || {};
+        try {
+          const cfgRows = await window.PartyDB.select("config", "key=eq.global", { forceNetwork: true });
+          if (Array.isArray(cfgRows) && cfgRows[0]?.value) {
+            freshGlobal = cfgRows[0].value;
+            this.data.globalCfg = { ...CFG.DEFAULTS, ...freshGlobal };
+          }
+        } catch (_) {}
+        const g = { ...CFG.DEFAULTS, ...freshGlobal };
+        const partyPin = this.normalizePinCode(g.partyJoinPin || "1234");
         const myDeviceId = window.PartyDB.getDeviceId();
         const normName = this.normalizePlayerName(name);
 
@@ -1682,13 +1926,10 @@
         const existing = sameNameRows[0] || null;
 
         if (existing) {
-          // 驗證統一派對 PIN 碼或該角色原 PIN 碼
-          if (rawPin && pin !== partyPin && existing.pin && existing.pin !== pin) {
-            this.toast("❌ PIN 碼不正確，請輸入主辦人提供的派對 PIN 碼！");
-            return;
-          }
-          if (!rawPin && existing.pin && existing.pin !== partyPin) {
-            this.toast("請輸入 4 碼 PIN 認證登入！");
+          const existingPin = existing.pin ? this.normalizePinCode(existing.pin) : "";
+          const pinMatched = pin === partyPin || (existingPin && pin === existingPin);
+          if (!pinMatched) {
+            this.toast("❌ 派對通行 PIN 碼不正確！請輸入主辦人提供的通行碼（可點右側『👁️ 顯示』檢查輸入字元）");
             return;
           }
           // 🔒 單機綁定鎖：已綁定其他手機的暱稱，第 2 支手機無法登入
@@ -1725,8 +1966,8 @@
           return;
         }
 
-        if (rawPin && rawPin !== partyPin) {
-          this.toast("❌ 派對通行 PIN 碼不正確，請輸入主辦人給的 PIN 碼！");
+        if (pin !== partyPin) {
+          this.toast("❌ 派對通行 PIN 碼不正確！此為全場統一通行碼（可點右側『👁️ 顯示』檢查輸入內容）");
           return;
         }
 
@@ -1791,9 +2032,9 @@
               {
                 id: `init_300_${newId}`,
                 player_id: newId,
-                delta: Number(this.data.globalCfg.initialPoints) || 300,
+                delta: Number(this.data.globalCfg.initialPoints ?? 100),
                 category: "initial",
-                reason: "🎉 跨年英雄紀元開賽初始基金",
+                reason: "🎉 跨年英雄紀元報到紀念榮譽分",
                 day_key: dayKey,
               },
             ],
@@ -1827,6 +2068,9 @@
     logoutSwitchAccount() {
       this.closeResultSplash();
       if (window.PartyGamesUI) {
+        if (window.PartyGamesUI.activeRoomTableId) {
+          window.PartyGamesUI.syncSpectatorPresence(window.PartyGamesUI.activeRoomTableId, false).catch(() => {});
+        }
         window.PartyGamesUI.activeRoomTableId = null;
       }
       document.getElementById("game-room-overlay")?.classList.add("hidden");
@@ -1838,6 +2082,9 @@
       } else {
         localStorage.removeItem("nye_party_player_id");
         localStorage.removeItem("nye_party_gm");
+      }
+      if (window.PartyFX && window.PartyFX.syncPlayerToNative) {
+        window.PartyFX.syncPlayerToNative("");
       }
       this.render();
     },
@@ -1913,13 +2160,20 @@
 
     // ==================== 🏠 分頁二：個人主頁 (開賽前自動隱藏遊戲機制保留驚喜！) ====================
     renderPersonalDashboard(ctx) {
-      const { me, players, ledger, badgesAwarded, globalCfg, scoreboard, sceneInfo } = ctx;
+      const { me, players, ledger, claims, badgesAwarded, globalCfg, scoreboard, sceneInfo, isGmUnlocked } = ctx;
       const isPreEvent = sceneInfo.scene === "pre_event";
       const myStat = scoreboard.byId[me.id] || { baseScore: 0, rawRank: 1 };
       const g = { ...CFG.DEFAULTS, ...(globalCfg || {}) };
 
       const myBadges = (badgesAwarded || []).filter((b) => b.player_id === me.id);
-      const myLedger = (ledger || []).filter((l) => l.player_id === me.id).slice(0, 20);
+      const myLedger = (ledger || []).filter((l) => l.player_id === me.id);
+      const myApprovedClaims = (claims || [])
+        .filter((c) => c.applicant_id === me.id && c.status === "approved")
+        .sort((a, b) =>
+          String(b.approved_at || b.updated_at || b.created_at || "").localeCompare(
+            String(a.approved_at || a.updated_at || a.created_at || "")
+          )
+        );
       const roommates = me.room
         ? (players || []).filter((p) => p.room === me.room && p.id !== me.id)
         : [];
@@ -1956,13 +2210,17 @@
             </div>
             <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;">
               <button class="btn btn-ghost btn-xs" title="切換音效開關" onclick="PartyApp.toggleSoundMute()">${isMuted ? "🔇 已靜音" : "🔊 音效開"}</button>
-              <button class="btn btn-ghost btn-xs" title="切換或登出帳號" onclick="PartyApp.logoutSwitchAccount()">🚪 換帳號</button>
+              ${
+                isGmUnlocked
+                  ? `<button class="btn btn-ghost btn-xs" title="GM 切換或登出帳號" onclick="PartyApp.logoutSwitchAccount()">🚪 換帳號</button>`
+                  : ""
+              }
             </div>
           </div>
 
           ${
             isPreEvent
-              ? `<div class="thigh-locked-bar" style="margin-top:4px;">🤫 神秘派對機制將於活動正式開始時揭曉，敬請期待！</div>`
+              ? `<div class="thigh-locked-bar" style="margin-top:4px;">🎮 目前為暖身練習階段（無積分消耗）；正式活動開始時將自動發放 300 PT 榮譽積分與夥伴默契任務！</div>`
               : `
                 ${
                   myBadges.length > 0
@@ -1995,19 +2253,51 @@
                   </div>
                 </div>
 
+                <!-- p: 個人主頁即時顯示已完成的秘密任務與打卡紀錄，點擊可查達成時間與投票細節 -->
+                <details ${myApprovedClaims.length > 0 ? "open" : ""} style="margin-top:10px;">
+                  <summary class="muted-xs" style="cursor:pointer;color:#fde047;font-weight:700;">
+                    🕵️ 我的已達成秘密任務 ＆ 認證紀錄（${myApprovedClaims.length} 筆・點擊查看時間＆投票明細）
+                  </summary>
+                  <div data-scroll-key="my-claims-scroll" style="margin-top:6px;max-height:190px;overflow-y:auto;">
+                    ${
+                      myApprovedClaims.length === 0
+                        ? `<div class="muted-xs" style="padding:4px 0;">尚無已完成的秘密任務或同伴打卡紀錄</div>`
+                        : myApprovedClaims
+                            .map((c) => {
+                              const tStr = this.formatShortTime(
+                                c.approved_at || c.updated_at || c.created_at
+                              );
+                              return `<div class="history-row clickable-row" style="font-size:12.5px;" onclick="PartyApp.openClaimDetailModal('${esc(c.id)}')">
+                                <div style="min-width:0;flex:1;">
+                                  <div><b>✅ ${esc(c.title)}</b></div>
+                                  <div class="muted-xs">🕒 達成時間：${esc(tStr || "剛剛")} ｜ 點擊查看投票明細 ▸</div>
+                                </div>
+                                <b style="color:#6ee7b7;flex-shrink:0;">+${c.points} PT</b>
+                              </div>`;
+                            })
+                            .join("")
+                    }
+                  </div>
+                </details>
+
+                <!-- m: 個人積分存摺同步顯示獲得時間，點擊可查看歷史回顧 -->
                 <details style="margin-top:10px;">
-                  <summary class="muted-xs" style="cursor:pointer;">📜 展開我的個人積分存摺明細（最近 ${myLedger.length} 筆）</summary>
-                  <div style="margin-top:6px;max-height:180px;overflow-y:auto;">
+                  <summary class="muted-xs" style="cursor:pointer;">📜 展開我的個人積分存摺明細（共 ${myLedger.length} 筆・點擊看歷史回顧）</summary>
+                  <div data-scroll-key="my-ledger-scroll" style="margin-top:6px;max-height:240px;overflow-y:auto;">
                     ${
                       myLedger.length === 0
                         ? `<div class="muted-xs">尚無積分變動紀錄</div>`
                         : myLedger
-                            .map(
-                              (l) => `<div class="history-row" style="font-size:12.5px;">
-                                <span>${esc(l.reason)}</span>
-                                <b style="color:${l.delta >= 0 ? "#6ee7b7" : "#fda4af"};">${l.delta >= 0 ? `+${l.delta}` : l.delta} PT</b>
-                              </div>`
-                            )
+                            .map((l) => {
+                              const tStr = this.formatShortTime(l.created_at);
+                              return `<div class="history-row clickable-row" style="font-size:12.5px;" onclick="PartyApp.openLedgerDetailModal('${esc(l.id)}')">
+                                <div style="min-width:0;flex:1;">
+                                  <div>${esc(l.reason)}</div>
+                                  <div class="muted-xs">🕒 ${esc(tStr || "--:--")} ｜ 點擊查看回顧 ▸</div>
+                                </div>
+                                <b style="color:${l.delta >= 0 ? "#6ee7b7" : "#fda4af"};flex-shrink:0;">${l.delta >= 0 ? `+${l.delta}` : l.delta} PT</b>
+                              </div>`;
+                            })
                             .join("")
                     }
                   </div>
@@ -2016,7 +2306,7 @@
           }
         </div>
 
-        <!-- 2. 行前必填：雙輪個人資料分享卡 -->
+        <!-- 2. 行前必填：雙輪個人資料分享卡 (b: 範例獨立自動換行顯示 + textarea 不截斷！) -->
         <div class="section-card" id="share-cards-section">
           <details class="share-form-details" ${!ok26 || !ok27 || isPreEvent ? "open" : ""}>
             <summary style="font-weight:800;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
@@ -2027,20 +2317,24 @@
 
             <div class="share-form-block">
               <div class="sub-label">📘 Part A：${esc(prA)}</div>
-              <input id="sh26-story" class="input-dark" placeholder="例：今年一個人去北海道自駕差點迷路" value="${esc(me.share_2026?.story || "")}">
-              <input id="sh26-true" class="input-dark" style="margin-top:6px;border-color:rgba(16,185,129,0.5);" placeholder="✅ 1 個真實細節（例：最後是靠便利商店店員畫地圖救了我）" value="${esc(me.share_2026?.trueFact || "")}">
-              <input id="sh26-f1" class="input-dark" style="margin-top:5px;" placeholder="🎭 假細節 1" value="${esc(me.share_2026?.fakeFacts?.[0] || "")}">
-              <input id="sh26-f2" class="input-dark" style="margin-top:5px;" placeholder="🎭 假細節 2" value="${esc(me.share_2026?.fakeFacts?.[1] || "")}">
-              <input id="sh26-f3" class="input-dark" style="margin-top:5px;" placeholder="🎭 假細節 3" value="${esc(me.share_2026?.fakeFacts?.[2] || "")}">
+              <div class="field-hint">💡 故事舉例：今年一個人去北海道自駕差點迷路</div>
+              <textarea id="sh26-story" rows="2" class="input-dark" placeholder="請輸入你的故事／事件標題…">${esc(me.share_2026?.story || "")}</textarea>
+              <div class="field-hint" style="margin-top:8px;">💡 真實細節舉例：最後是靠便利商店店員畫地圖救了我</div>
+              <textarea id="sh26-true" rows="2" class="input-dark" style="border-color:rgba(16,185,129,0.5);" placeholder="✅ 輸入 1 個真實細節…">${esc(me.share_2026?.trueFact || "")}</textarea>
+              <input id="sh26-f1" class="input-dark" style="margin-top:6px;" placeholder="🎭 瞎掰假細節 1" value="${esc(me.share_2026?.fakeFacts?.[0] || "")}">
+              <input id="sh26-f2" class="input-dark" style="margin-top:5px;" placeholder="🎭 瞎掰假細節 2" value="${esc(me.share_2026?.fakeFacts?.[1] || "")}">
+              <input id="sh26-f3" class="input-dark" style="margin-top:5px;" placeholder="🎭 瞎掰假細節 3" value="${esc(me.share_2026?.fakeFacts?.[2] || "")}">
             </div>
 
             <div class="share-form-block" style="margin-top:12px;">
               <div class="sub-label">🚀 Part B：${esc(prB)}</div>
-              <input id="sh27-story" class="input-dark" placeholder="例：報名人生第一場鐵人三項或學衝浪" value="${esc(me.share_2027?.story || "")}">
-              <input id="sh27-true" class="input-dark" style="margin-top:6px;border-color:rgba(16,185,129,0.5);" placeholder="✅ 1 個真實動機／細節" value="${esc(me.share_2027?.trueFact || "")}">
-              <input id="sh27-f1" class="input-dark" style="margin-top:5px;" placeholder="🎭 假細節 1" value="${esc(me.share_2027?.fakeFacts?.[0] || "")}">
-              <input id="sh27-f2" class="input-dark" style="margin-top:5px;" placeholder="🎭 假細節 2" value="${esc(me.share_2027?.fakeFacts?.[1] || "")}">
-              <input id="sh27-f3" class="input-dark" style="margin-top:5px;" placeholder="🎭 假細節 3" value="${esc(me.share_2027?.fakeFacts?.[2] || "")}">
+              <div class="field-hint">💡 願望舉例：報名人生第一場鐵人三項或學衝浪</div>
+              <textarea id="sh27-story" rows="2" class="input-dark" placeholder="請輸入你的目標／新年願望…">${esc(me.share_2027?.story || "")}</textarea>
+              <div class="field-hint" style="margin-top:8px;">💡 真實動機舉例：已經偷偷買好裝備跟教練課了</div>
+              <textarea id="sh27-true" rows="2" class="input-dark" style="border-color:rgba(16,185,129,0.5);" placeholder="✅ 輸入 1 個真實動機或細節…">${esc(me.share_2027?.trueFact || "")}</textarea>
+              <input id="sh27-f1" class="input-dark" style="margin-top:6px;" placeholder="🎭 瞎掰假細節 1" value="${esc(me.share_2027?.fakeFacts?.[0] || "")}">
+              <input id="sh27-f2" class="input-dark" style="margin-top:5px;" placeholder="🎭 瞎掰假細節 2" value="${esc(me.share_2027?.fakeFacts?.[1] || "")}">
+              <input id="sh27-f3" class="input-dark" style="margin-top:5px;" placeholder="🎭 瞎掰假細節 3" value="${esc(me.share_2027?.fakeFacts?.[2] || "")}">
             </div>
 
             <button class="btn btn-gold" style="width:100%;margin-top:10px;" onclick="PartyApp.saveMyShareCards()">
@@ -2079,29 +2373,156 @@
           ${isPreEvent ? "" : `<div class="muted-xs" style="margin-top:8px;color:#fcd34d;">${esc(g.villaInfo?.notes || "")}</div>`}
         </div>
 
-        <!-- 4. 跨年夥伴大頭貼牆 -->
+        <!-- 4. 跨年夥伴大頭貼牆（支援點擊檢視與 UGC 隱藏／檢舉安全機制） -->
         <div class="section-card">
           <div class="section-title">👥 已報到夥伴牆 (${players.length} 人)</div>
+          <div class="muted-xs" style="margin-bottom:8px;">點擊成員頭貼可查看房號資訊，或管理隱藏／檢舉不當圖文內容：</div>
           <div class="members-wall">
             ${(players || [])
               .map((p) => {
                 const pBadges = (badgesAwarded || []).filter((b) => b.player_id === p.id);
+                const isBlocked = getBlockedIdsSet().has(p.id);
+                const dispName = isBlocked ? "已隱藏成員" : p.name;
                 return `
-                  <div class="member-tile">
+                  <div class="member-tile" style="cursor:pointer;${isBlocked ? "opacity:0.55;" : ""}" onclick="PartyApp.openMemberSafetyModal('${esc(p.id)}')">
                     ${avatarHtml(p, 46)}
-                    <div class="member-name">${esc(p.name)}</div>
+                    <div class="member-name">${esc(dispName)}</div>
                     <div class="muted-xs">${esc(p.room || "待分房")}</div>
-                    <div class="muted-xs">${isPreEvent ? "✨已報到" : pBadges.length ? `🏅×${pBadges.length}` : "✨參戰中"}</div>
+                    <div class="muted-xs">${isBlocked ? "🚫已隱藏" : isPreEvent ? "✨已報到" : pBadges.length ? `🏅×${pBadges.length}` : "✨參戰中"}</div>
                   </div>
                 `;
               })
               .join("")}
           </div>
         </div>
+
+        <!-- 5. 帳號管理、隱私權與自助刪除帳號（App Store Guideline 5.1.1(v)） -->
+        <div class="section-card">
+          <details>
+            <summary class="muted-xs" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+              <span>⚙️ 帳號管理、隱私權政策與純娛樂聲明</span>
+              <span>展開 ▾</span>
+            </summary>
+            <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
+              <div class="muted-xs" style="line-height:1.55;">
+                🛡️ 本應用程式為親友聚會團康娛樂工具，所有榮譽積分（PT）均由系統免費發放，僅供活動排名紀念，不涉及任何真實金錢購買、儲值或獎品兌換。
+              </div>
+              <div class="grid-2-btns">
+                <a href="privacy.html" target="_blank" rel="noopener" class="btn btn-secondary btn-xs" style="text-decoration:none;text-align:center;">
+                  📄 隱私權與純娛樂聲明
+                </a>
+                <button type="button" class="btn btn-ghost btn-xs" style="color:#fda4af;border-color:rgba(251,113,133,0.45);" onclick="PartyApp.confirmDeleteMyAccount()">
+                  🗑️ 註銷並永久刪除我的帳號資料
+                </button>
+              </div>
+            </div>
+          </details>
+        </div>
       `;
     },
 
-    // --- 🙌 神隊友互助 ＆ 早起打卡（6 項同伴互證，移至「🎮 遊戲舞台」Tab！） ---
+    openMemberSafetyModal(playerId) {
+      const ctx = this.getContext();
+      const target = (ctx.players || []).find((p) => p.id === playerId);
+      if (!target) return;
+      if (ctx.me && target.id === ctx.me.id) {
+        this.openAvatarPickerModal();
+        return;
+      }
+      const isBlocked = getBlockedIdsSet().has(target.id);
+      const modal = document.getElementById("party-modal");
+      const box = document.getElementById("party-modal-body");
+      if (!modal || !box) return;
+      modal.classList.remove("hidden");
+      box.innerHTML = `
+        <div class="modal-head">
+          <h3>👤 成員資訊與內容安全</h3>
+          <button class="btn-close" onclick="PartyGamesUI.closeModal()">✕</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+          ${avatarHtml(target, 56)}
+          <div>
+            <div style="font-size:18px;font-weight:800;">${esc(isBlocked ? "已隱藏成員" : target.name)}</div>
+            <div class="muted-xs">🛏️ 房間：${esc(target.room || "待指派")}</div>
+          </div>
+        </div>
+        <div class="muted-xs" style="margin-bottom:10px;line-height:1.5;">
+          若此成員的大頭貼、暱稱或分享內容含有不當元素，你可立即在本機隱藏其自訂圖文，或向主辦人送出檢舉：
+        </div>
+        <div class="grid-2-btns">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="PartyApp.toggleBlockMember('${esc(target.id)}')">
+            ${isBlocked ? "👁️ 解除隱藏此成員" : "🚫 隱藏／封鎖此成員圖文"}
+          </button>
+          <button type="button" class="btn btn-rose btn-sm" onclick="PartyApp.reportMemberContent('${esc(target.id)}')">
+            🚩 檢舉不當內容
+          </button>
+        </div>
+      `;
+    },
+
+    toggleBlockMember(playerId) {
+      const set = getBlockedIdsSet();
+      if (set.has(playerId)) {
+        set.delete(playerId);
+        this.toast("👁️ 已解除隱藏該成員內容");
+      } else {
+        set.add(playerId);
+        this.toast("🚫 已在本機隱藏該成員的大頭貼與自訂內容");
+      }
+      localStorage.setItem("nye_blocked_uids", JSON.stringify([...set]));
+      window.PartyGamesUI.closeModal();
+      this.render();
+    },
+
+    async reportMemberContent(playerId) {
+      const ctx = this.getContext();
+      const target = (ctx.players || []).find((p) => p.id === playerId);
+      if (!target || !ctx.me) return;
+      await window.PartyDB.upsert("theme_responses", [
+        {
+          id: `ugc_rep_${ctx.me.id}_${playerId}`,
+          session_id: "ugc_reports",
+          step_key: "report",
+          player_id: ctx.me.id,
+          payload: {
+            targetId: playerId,
+            targetName: target.name,
+            reporterName: ctx.me.name,
+            reportedAt: new Date().toISOString(),
+          },
+        },
+      ]);
+      const set = getBlockedIdsSet();
+      set.add(playerId);
+      localStorage.setItem("nye_blocked_uids", JSON.stringify([...set]));
+      window.PartyGamesUI.closeModal();
+      this.toast("✅ 已送出檢舉通知主辦人審核，並自動為你隱藏該成員內容！");
+      await this.refreshAll();
+    },
+
+    confirmDeleteMyAccount() {
+      const ctx = this.getContext();
+      if (!ctx.me) return;
+      const myId = ctx.me.id;
+      const myName = ctx.me.name;
+      this.confirmModal(
+        "🗑️ 註銷並永久刪除我的帳號資料",
+        `確定要永久刪除你的暱稱帳號「${myName}」與個人大頭貼、分享卡及全部活動紀錄嗎？\n此動作無法復原，刪除後將立即返回登入畫面。`,
+        "🗑️ 確定永久刪除",
+        async () => {
+          if (window.GMConsole && window.GMConsole.deletePlayerAccount) {
+            await window.GMConsole.deletePlayerAccount(myId, { allowSelf: true });
+          } else {
+            await window.PartyDB.remove("players", `id=eq.${encodeURIComponent(myId)}`);
+            this.logoutSwitchAccount();
+            this.toast("🗑️ 已永久註銷並刪除你的帳號資料！");
+          }
+        },
+        true
+      );
+    },
+
+    // --- 🙌 神隊友互助 ＆ 早起打卡（o: 保留在「🎮 遊戲舞台」最底部，所有時段一律預設收折，展開才看到！） ---
     formatPendingApprovers(claim, ctx) {
       const playerMap = {};
       (ctx.players || []).forEach((p) => (playerMap[p.id] = p));
@@ -2123,11 +2544,21 @@
       return parts.join(" ｜ ");
     },
 
-    renderChoreCheckInCard(ctx, opts = {}) {
+    getMorningBirdCalDate(claim, fallbackDateKey) {
+      if (claim && claim.calendar_date) return String(claim.calendar_date);
+      if (claim && claim.created_at) {
+        const ms = Date.parse(claim.created_at);
+        if (!Number.isNaN(ms)) return window.PartyEngine.taipeiParts(ms).dateKey;
+      }
+      return (claim && claim.day_key) || fallbackDateKey;
+    },
+
+    renderChoreCheckInCard(ctx) {
       const { me, claims, globalCfg } = ctx;
-      const autoFold = Boolean(opts.collapsible);
       const g = { ...CFG.DEFAULTS, ...(globalCfg || {}) };
       const dayKey = g.activeDayKey || "2026-12-31";
+      const effNowMs = window.PartyEngine.getEffectiveNowMs(g, window.PartyDB.serverNowMs);
+      const todayCalDate = window.PartyEngine.taipeiParts(effNowMs).dateKey;
       const checkInBadges = CFG.BADGE_CATALOG.filter((b) => !b.auto);
       const myPendingChores = (claims || []).filter(
         (c) =>
@@ -2154,19 +2585,33 @@
               </div>`
             : ""
         }
-        <div class="bet-btn-grid">
+        <div class="cheer-btn-grid">
           ${checkInBadges
             .map((b) => {
-              const limit = b.code === "morning_bird" ? 1 : b.maxCount || 2;
-              const used = (claims || []).filter(
+              const totalLimit = b.maxCount || (b.code === "morning_bird" ? 3 : 2);
+              const validClaims = (claims || []).filter(
                 (c) =>
                   c.applicant_id === me.id &&
                   c.badge_code === b.code &&
-                  c.status !== "rejected" &&
-                  (b.code === "morning_bird" ? c.day_key === dayKey : true)
-              ).length;
-              const full = used >= limit;
+                  c.status !== "rejected"
+              );
+              const totalUsed = validClaims.length;
+              const usedToday =
+                b.code === "morning_bird"
+                  ? validClaims.filter((c) => this.getMorningBirdCalDate(c, dayKey) === todayCalDate).length
+                  : 0;
+              const full =
+                b.code === "morning_bird"
+                  ? totalUsed >= totalLimit || usedToday >= 1
+                  : totalUsed >= totalLimit;
               const lockedBySeason = g.seasonStatus !== "active";
+              const subTxt = lockedBySeason
+                ? "🔒 活動開始後開放"
+                : b.code === "morning_bird"
+                ? usedToday >= 1 && totalUsed < totalLimit
+                  ? `✅ 今日已打卡 (累計 ${totalUsed}/${totalLimit})`
+                  : `需 ${b.needWitness} 人見證 (累計 ${totalUsed}/${totalLimit}・每日1次)`
+                : `需 ${b.needWitness} 人見證 (${totalUsed}/${totalLimit})`;
               return `
                 <button class="btn ${full ? "btn-ghost" : "btn-secondary"} btn-sm"
                   style="text-align:left;display:flex;flex-direction:column;gap:2px;"
@@ -2174,7 +2619,7 @@
                   onclick="PartyApp.openChoreClaimModal('${b.code}')">
                   <span>${b.icon} <b>${esc(b.name)}</b> <small class="gold-text">+${b.points}</small></span>
                   <span class="muted-xs" style="font-size:11px;">
-                    ${lockedBySeason ? "🔒 活動開始後開放" : `需 ${b.needWitness} 人見證 (${used}/${limit})`}
+                    ${subTxt}
                   </span>
                 </button>
               `;
@@ -2183,29 +2628,23 @@
         </div>
       `;
 
-      if (autoFold) {
-        return `
-          <div class="section-card" style="margin-top:14px;">
-            <details>
-              <summary style="font-weight:800;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-                <span>🙌 神隊友互助 ＆ 早起打卡（團康進行中已收折）</span>
-                <span class="muted-xs">點擊展開 ▾</span>
-              </summary>
-              <div style="margin-top:10px;">${innerHtml}</div>
-            </details>
-          </div>
-        `;
-      }
-
       return `
         <div class="section-card" style="margin-top:14px;">
-          <div class="section-title">🙌 神隊友互助 ＆ 早起打卡（6 項同伴互證）</div>
-          ${innerHtml}
+          <details>
+            <summary style="font-weight:800;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;">
+              <span>🙌 神隊友互助 ＆ 早起打卡</span>
+              <span style="display:flex;align-items:center;gap:6px;">
+                ${myPendingChores.length > 0 ? `<span class="q-tag q-cheer">⏳ 認證中 ×${myPendingChores.length}</span>` : ""}
+                <span class="muted-xs">點擊展開 ▾</span>
+              </span>
+            </summary>
+            <div style="margin-top:10px;">${innerHtml}</div>
+          </details>
         </div>
       `;
     },
 
-    // ==================== 🎮 分頁一：遊戲舞台 (開賽前完全保密遊戲資訊，開賽後隨場景切換) ====================
+    // ==================== 🎮 分頁一：遊戲舞台（暖身練習大廳 ＋ 隨行程自動切換團康舞台） ====================
     renderFirstLoginCheckCard(ctx, isPreEvent) {
       const { me, globalCfg } = ctx;
       const g = { ...CFG.DEFAULTS, ...(globalCfg || {}) };
@@ -2228,7 +2667,7 @@
           ${
             isPreEvent
               ? `<p class="muted-sm">
-                   🤫 為了保留最高驚喜感，<b>所有神秘遊戲與賽制將於活動正式開始時揭曉</b>！出發前請先完成以下兩件事即可：
+                   正式團康行程開跑前，歡迎先完成以下 2 項行前設定，並可直接在下方<b>【派對暖身練習大廳】</b>免費體驗全部 7 款派對小遊戲！
                  </p>`
               : `<p class="muted-sm">花 1 分鐘確認通知音效並填好你的個人資料卡，就能無縫參與所有活動：</p>`
           }
@@ -2266,12 +2705,13 @@
         : "待設定";
 
       return `
+        ${this.renderCollapsibleScheduleCard(ctx)}
         ${
           launchAt > 0
             ? `<div id="launch-countdown-card" class="launch-countdown-card" data-launch-ms="${launchAt}">
-                 <span class="scene-pill pill-gold">⚔️ SERVER LAUNCH COUNTDOWN</span>
+                 <span class="scene-pill pill-gold">🚀 正式團康活動倒數計時</span>
                  <div style="font-weight:900;font-size:17px;color:#f8fafc;margin-top:8px;">
-                   遊戲將在 <span id="lcd-inline-summary" class="gold-text">${dd}日 ${String(hh).padStart(2, "0")}時 ${String(mm).padStart(2, "0")}分 ${String(ss).padStart(2, "0")}秒</span> 之後開始！
+                   正式行程將在 <span id="lcd-inline-summary" class="gold-text">${dd}日 ${String(hh).padStart(2, "0")}時 ${String(mm).padStart(2, "0")}分 ${String(ss).padStart(2, "0")}秒</span> 後登場！
                  </div>
                  <div class="lcd-grid">
                    <div class="lcd-tile"><div id="lcd-dd" class="lcd-num">${String(dd).padStart(2, "0")}</div><div class="lcd-unit">日 (DAYS)</div></div>
@@ -2279,18 +2719,12 @@
                    <div class="lcd-tile"><div id="lcd-mm" class="lcd-num">${String(mm).padStart(2, "0")}</div><div class="lcd-unit">分 (MIN)</div></div>
                    <div class="lcd-tile"><div id="lcd-ss" class="lcd-num">${String(ss).padStart(2, "0")}</div><div class="lcd-unit">秒 (SEC)</div></div>
                  </div>
-                 <div class="muted-xs">⏰ 預計開服時間：<b>${esc(launchTimeTxt)}</b>（倒數歸零自動解封全場神秘遊戲！）</div>
+                 <div class="muted-xs">⏰ 預計正式開跑：<b>${esc(launchTimeTxt)}</b>（下方暖身練習大廳現已全天候開放試玩！）</div>
                </div>`
             : ""
         }
         ${this.renderFirstLoginCheckCard(ctx, true)}
-        <div class="empty-card" style="margin-top:14px;">
-          <div style="font-size:38px;margin-bottom:6px;">🎁🔒</div>
-          <div style="font-weight:800;font-size:16.5px;color:#fde047;">神秘遊戲內容・開服前全面保密中</div>
-          <div class="muted-sm" style="margin-top:6px;">
-            開服前僅開放填寫個人資料與測試通知音效，所有神秘關卡與賽制將於上方倒數歸零時同步揭曉！
-          </div>
-        </div>
+        ${window.PartyGamesUI.renderLobby(ctx, { forceTestOnly: true, unlimitedWarmup: true })}
       `;
     },
 
@@ -2324,22 +2758,17 @@
           ${this.renderChoreCheckInCard(ctx)}
         `;
       }
-      // theme or red_packet (c-4: 當玩家已加入進行中的團康主題房時，自動收折下方互助打卡雜訊！)
-      const activeTheme = window.ThemeGamesUI.getActiveSession(ctx.themeSessions);
-      const inActiveTheme =
-        scene === "red_packet" ||
-        Boolean(activeTheme && (activeTheme.participants || []).includes(ctx.me.id));
       return `
         ${firstLoginBanner}
         ${window.ThemeGamesUI.renderStage(ctx)}
         ${this.renderHiddenMissionsDrawer(ctx, false)}
-        ${this.renderChoreCheckInCard(ctx, { collapsible: inActiveTheme })}
+        ${this.renderChoreCheckInCard(ctx)}
       `;
     },
 
     // --- 🕵️ 個人 Chill 隱藏任務抽屜 ---
     renderHiddenMissionsDrawer(ctx, openByDefault) {
-      const { me, missions, claims, globalCfg } = ctx;
+      const { me, missions, claims, ledger, globalCfg } = ctx;
       const g = { ...CFG.DEFAULTS, ...(globalCfg || {}) };
       const dayKey = g.activeDayKey || "2026-12-31";
       const mid = `${me.id}_${dayKey}`;
@@ -2358,13 +2787,18 @@
       const myClaims = (claims || []).filter(
         (c) => c.applicant_id === me.id && c.claim_type === "hidden_mission" && c.day_key === dayKey
       );
+      const myMissionLedgerIds = new Set(
+        (ledger || [])
+          .filter((l) => l.player_id === me.id && l.category === "mission")
+          .map((l) => l.id)
+      );
 
       return `
         <div class="section-card" style="margin-top:14px;">
           <details ${openByDefault ? "open" : ""}>
             <summary style="font-weight:800;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
               <span>🕵️ 我的今日秘密隱藏任務（${esc(dayKey)}）</span>
-              <span class="q-tag ${myM.locked ? "q-ok" : "q-bet"}">${myM.locked ? "🔒 已鎖定開解中" : `🎲 可重抽 ${rerollsLeft} 次`}</span>
+              <span class="q-tag ${myM.locked ? "q-ok" : "q-cheer"}">${myM.locked ? "🔒 已鎖定開解中" : `🎲 可重抽 ${rerollsLeft} 次`}</span>
             </summary>
 
             ${
@@ -2378,11 +2812,19 @@
             <div class="mission-cards-list">
               ${(myM.cards || [])
                 .map((c, idx) => {
-                  const existingClaim = myClaims.find(
-                    (cl) => cl.mission_card_id === c.id && cl.status !== "rejected"
+                  const approvedClaim = myClaims.find(
+                    (cl) => cl.mission_card_id === c.id && cl.status === "approved"
                   );
+                  const pendingClaim = !approvedClaim
+                    ? myClaims.find((cl) => cl.mission_card_id === c.id && cl.status === "pending")
+                    : null;
+                  const existingClaim = approvedClaim || pendingClaim || null;
+                  const rewardedInLedger = myMissionLedgerIds.has(
+                    `msn_reward_${me.id}_${dayKey}_${c.id}`
+                  );
+                  const isDone = Boolean(approvedClaim || rewardedInLedger);
                   return `
-                    <div class="mission-card ${existingClaim?.status === "approved" ? "done" : ""}">
+                    <div class="mission-card ${isDone ? "done" : ""}">
                       <div style="display:flex;justify-content:space-between;align-items:center;">
                         <span class="badge-pill">【${esc(c.tag)}】${c.needPhoto ? "📸拍傳LINE" : "💬日常互動"}</span>
                         <span class="gold-text">+${g.hiddenMissionPoints} PT</span>
@@ -2390,18 +2832,26 @@
                       <div style="margin:6px 0;font-size:14px;">${esc(c.text)}</div>
                       ${
                         !myM.locked
-                          ? rerollsLeft > 0
-                            ? `<button class="btn btn-secondary btn-xs" onclick="PartyApp.rerollSingleMission(${idx})">🔄 換掉這張 (剩 ${rerollsLeft} 次)</button>`
-                            : ""
+                          ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;">
+                               ${
+                                 rerollsLeft > 0
+                                   ? `<button class="btn btn-secondary btn-xs" onclick="PartyApp.rerollSingleMission(${idx})">🔄 換掉這張 (剩 ${rerollsLeft} 次)</button>`
+                                   : `<span class="muted-xs">🎲 重抽已用完</span>`
+                               }
+                               <span class="muted-xs" style="color:#94a3b8;">🔒 按下方鎖定後即可申請認證</span>
+                             </div>`
+                          : isDone
+                          ? `<div class="clickable-row" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 10px;border-radius:9px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.35);" ${approvedClaim ? `onclick="PartyApp.openClaimDetailModal('${esc(approvedClaim.id)}')"` : ""}>
+                               <span class="muted-xs" style="color:#6ee7b7;font-weight:800;">✅ 已認證入帳${approvedClaim ? `（${esc(this.formatShortTime(approvedClaim.approved_at || approvedClaim.updated_at || approvedClaim.created_at))}）` : ""}</span>
+                               ${approvedClaim ? `<span class="muted-xs" style="color:#fde047;font-weight:700;">🔍 認證細節 ▸</span>` : ""}
+                             </div>`
                           : existingClaim
-                          ? existingClaim.status === "approved"
-                            ? `<div class="muted-xs" style="color:#6ee7b7;font-weight:700;">✅ 已認證入帳！</div>`
-                            : `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-                                 <span class="muted-xs" style="color:#fcd34d;">⏳ ${esc(this.formatPendingApprovers(existingClaim, ctx))}</span>
-                                 <button type="button" class="btn btn-ghost btn-xs" style="padding:3px 9px;font-size:11.5px;" onclick="PartyApp.cancelMyPendingClaim('${esc(existingClaim.id)}')">
-                                   ↺ 撤回重選見證人
-                                 </button>
-                               </div>`
+                          ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+                               <span class="muted-xs" style="color:#fcd34d;">⏳ ${esc(this.formatPendingApprovers(existingClaim, ctx))}</span>
+                               <button type="button" class="btn btn-ghost btn-xs" style="padding:3px 9px;font-size:11.5px;" onclick="PartyApp.cancelMyPendingClaim('${esc(existingClaim.id)}')">
+                                 ↺ 撤回重選見證人
+                               </button>
+                             </div>`
                           : `<button class="btn btn-gold btn-xs" onclick="PartyApp.openMissionClaimModal('${c.id}')">🙋 我完成了！發起當事人＆見證認證</button>`
                       }
                     </div>
@@ -2449,7 +2899,7 @@
               const isTarget = c.target_id === ctx.me.id;
               const roleLabel = isTarget ? "互動當事人" : "現場見證人";
               return `
-                <div class="verify-prominent-card">
+                <div class="verify-prominent-card" id="verify-card-${esc(c.id)}">
                   <div style="display:flex;align-items:center;gap:10px;">
                     ${avatarHtml(applicant, 42)}
                     <div style="min-width:0;flex:1;">
@@ -2489,7 +2939,7 @@
       if (next === 4) {
         window.PartyFX.playTone("win");
         window.PartyFX.haptic("heavy");
-        window.PartyFX.launchFireworksShow({ redPackets: false, durationMs: 3800 });
+        window.PartyFX.launchFireworksShow({ celebration: false, durationMs: 3800 });
       } else {
         window.PartyFX.playTone("bell");
       }
@@ -2508,6 +2958,20 @@
           : gmStage;
 
       const crowns = (badgesAwarded || []).filter((b) => b.badge_code.startsWith("crown_"));
+      const crownGroups = [];
+      const crownGroupMap = {};
+      crowns.forEach((c) => {
+        if (!crownGroupMap[c.badge_code]) {
+          crownGroupMap[c.badge_code] = {
+            badge_code: c.badge_code,
+            title: c.title,
+            detail: c.detail,
+            winners: [],
+          };
+          crownGroups.push(crownGroupMap[c.badge_code]);
+        }
+        crownGroupMap[c.badge_code].winners.push(c.player_id);
+      });
       const myBadges = (badgesAwarded || []).filter((b) => b.player_id === me?.id);
       const playerMap = {};
       (players || []).forEach((p) => (playerMap[p.id] = p));
@@ -2561,16 +3025,16 @@
           }
         </div>
 
-        <!-- 第 1 幕：四大傳奇唯一王冠得主 -->
+        <!-- 第 1 幕：四大傳奇王冠得主（S4: 並列第一共享王冠並排在同一列） -->
         <div class="section-card" style="margin-bottom:14px;">
-          <div class="section-title">👑 第 1 幕｜四大傳奇唯一王冠得主 (+80 PT)</div>
+          <div class="section-title">👑 第 1 幕｜四大傳奇王冠得主 (+80 PT)</div>
           ${
-            crowns.length > 0
-              ? crowns
+            crownGroups.length > 0
+              ? crownGroups
                   .map(
-                    (c) => `<div class="history-row">
-                      <span>👑 <b>${esc(c.title)}</b> — <b class="gold-text">${esc(playerMap[c.player_id]?.name || c.player_id)}</b></span>
-                      <span class="muted-xs">${esc(c.detail)}</span>
+                    (grp) => `<div class="history-row" style="flex-wrap:wrap;gap:6px;">
+                      <span>👑 <b>${esc(grp.title)}</b> — <b class="gold-text">${grp.winners.map((pid) => `👑 ${esc(playerMap[pid]?.name || pid)}`).join("、")}</b></span>
+                      <span class="muted-xs">${esc(grp.detail)}</span>
                     </div>`
                   )
                   .join("")
@@ -2665,12 +3129,12 @@
                        <div style="font-size:42px;line-height:1.1;">👑🎆🏆</div>
                        <div class="eyebrow-tag" style="margin-top:6px;">GRAND CHAMPION MVP</div>
                        <h2 style="font-size:26px;color:#fef08a;margin:8px 0 4px;">
-                         ${champions.map((c) => esc(c.name)).join("、")}
+                         ${champions.map((c) => `👑 ${esc(c.name)}`).join("、")}
                        </h2>
                        <div style="font-size:20px;font-weight:900;color:#fff;">
                          決賽總積分 ${window.PartyEngine.fmtPt(champions[0].finalScore)} PT 稱霸全場！
                        </div>
-                       <button type="button" class="btn btn-secondary btn-xs" style="margin-top:10px;" onclick="window.PartyFX.playFirecrackers();window.PartyFX.launchFireworksShow({redPackets:false,durationMs:3600});">
+                       <button type="button" class="btn btn-secondary btn-xs" style="margin-top:10px;" onclick="window.PartyFX.playFirecrackers();window.PartyFX.launchFireworksShow({celebration:false,durationMs:3600});">
                          🎆 為總冠軍施放禮砲煙火！
                        </button>
                      </div>`
@@ -2754,6 +3218,266 @@
       `;
     },
 
+    // ==================== j / m / p：歷史回顧與認證明細視窗 ====================
+    openTableHistoryModal(tableId) {
+      const ctx = this.getContext();
+      const table = (ctx.tables || []).find((t) => t.id === tableId);
+      if (!table) {
+        this.toast("找不到該筆賽桌紀錄！");
+        return;
+      }
+      const modal = document.getElementById("party-modal");
+      const box = document.getElementById("party-modal-body");
+      if (!modal || !box) return;
+      const gm = CFG.PARTY_GAMES.find((x) => x.id === table.game_type) || { icon: "🎲", name: table.game_type };
+      modal.classList.remove("hidden");
+      box.innerHTML = `
+        <div class="modal-head">
+          <h3>${gm.icon} 賽局歷史回顧</h3>
+          <button class="btn-close" onclick="PartyGamesUI.closeModal()">✕</button>
+        </div>
+        ${window.PartyGamesUI.renderTableOutcomeReviewHtml(table, ctx)}
+        <button class="btn btn-gold" style="width:100%;margin-top:12px;" onclick="PartyGamesUI.closeModal()">
+          ✕ 關閉視窗
+        </button>
+      `;
+    },
+
+    openClaimDetailModal(claimId) {
+      const ctx = this.getContext();
+      const claim = (ctx.claims || []).find((c) => c.id === claimId);
+      if (!claim) {
+        this.toast("找不到該筆認證紀錄！");
+        return;
+      }
+      const playerMap = {};
+      (ctx.players || []).forEach((p) => (playerMap[p.id] = p));
+
+      // 找出對應隱藏任務卡片全文（若有）
+      let cardDesc = claim.card_text || "";
+      if (!cardDesc && claim.mission_card_id) {
+        const myM = (ctx.missions || []).find(
+          (m) => m.player_id === claim.applicant_id && m.day_key === claim.day_key
+        );
+        const cardObj = (myM?.cards || []).find((x) => x.id === claim.mission_card_id);
+        if (cardObj) cardDesc = cardObj.text;
+      }
+
+      // 合併 approvals_snapshot 與即時 claim_approvals
+      const rawApprovals =
+        Array.isArray(claim.approvals_snapshot) && claim.approvals_snapshot.length > 0
+          ? claim.approvals_snapshot
+          : (ctx.claimApprovals || []).filter((a) => a.claim_id === claim.id);
+      const approvalByUser = {};
+      rawApprovals.forEach((a) => {
+        approvalByUser[a.approver_id] = a;
+      });
+
+      const voterRows = [];
+      if (claim.target_id) {
+        const ap = approvalByUser[claim.target_id];
+        voterRows.push({
+          pid: claim.target_id,
+          name: playerMap[claim.target_id]?.name || ap?.approver_name || claim.target_id,
+          roleLabel: "🎯 互動當事人",
+          approved: Boolean(ap),
+          timeTxt: ap ? this.formatFullTime(ap.approved_at || ap.created_at) : "等待確認中",
+        });
+      }
+      const witnessSet = new Set(claim.witness_ids || []);
+      Object.keys(approvalByUser).forEach((uid) => {
+        if (uid !== claim.target_id && uid !== claim.applicant_id) witnessSet.add(uid);
+      });
+      [...witnessSet].forEach((wid) => {
+        const ap = approvalByUser[wid];
+        voterRows.push({
+          pid: wid,
+          name: playerMap[wid]?.name || ap?.approver_name || wid,
+          roleLabel: "👀 現場見證人",
+          approved: Boolean(ap),
+          timeTxt: ap ? this.formatFullTime(ap.approved_at || ap.created_at) : "未按／其他見證人已先通過",
+        });
+      });
+
+      const modal = document.getElementById("party-modal");
+      const box = document.getElementById("party-modal-body");
+      if (!modal || !box) return;
+      modal.classList.remove("hidden");
+      box.innerHTML = `
+        <div class="modal-head">
+          <h3>🕵️ 任務／打卡認證明細</h3>
+          <button class="btn-close" onclick="PartyGamesUI.closeModal()">✕</button>
+        </div>
+        <div class="section-card" style="margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+            <b>${esc(claim.title)}</b>
+            <span class="badge-pill pill-gold">+${claim.points} PT</span>
+          </div>
+          ${cardDesc ? `<div class="muted-sm" style="margin-top:6px;color:#e2e8f0;">📜 任務內容：${esc(cardDesc)}</div>` : ""}
+          <div class="muted-xs" style="margin-top:8px;line-height:1.6;">
+            <div>👤 申請玩家：<b>${esc(playerMap[claim.applicant_id]?.name || claim.applicant_id)}</b></div>
+            <div>📨 發起時間：${esc(this.formatFullTime(claim.created_at))}</div>
+            <div>✅ 解決入帳時間：<b class="gold-text">${
+              claim.status === "approved"
+                ? esc(this.formatFullTime(claim.approved_at || claim.updated_at || claim.created_at))
+                : "⏳ 尚在等待認證中"
+            }</b></div>
+            ${claim.photo_url === "LINE_ALBUM" ? `<div>📸 拍照認證：已確認上傳 LINE 群組相簿</div>` : ""}
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="sub-label" style="margin-bottom:6px;">🗳️ 當事人 ＆ 見證人投票確認明細：</div>
+          ${
+            voterRows.length === 0
+              ? `<div class="muted-xs">無見證人名單紀錄</div>`
+              : voterRows
+                  .map(
+                    (v) => `<div class="history-row" style="font-size:12.5px;flex-wrap:wrap;gap:4px;">
+                      <span>${v.roleLabel}：<b>${esc(v.name)}</b></span>
+                      <span class="muted-xs" style="color:${v.approved ? "#6ee7b7" : "#94a3b8"};">
+                        ${v.approved ? `✅ 已同意（${esc(v.timeTxt)}）` : `⏳ ${esc(v.timeTxt)}`}
+                      </span>
+                    </div>`
+                  )
+                  .join("")
+          }
+        </div>
+        <button class="btn btn-gold" style="width:100%;margin-top:12px;" onclick="PartyGamesUI.closeModal()">
+          ✕ 關閉視窗
+        </button>
+      `;
+    },
+
+    openLedgerDetailModal(ledgerId) {
+      const ctx = this.getContext();
+      const entry = (ctx.ledger || []).find((l) => l.id === ledgerId);
+      if (!entry) {
+        this.toast("找不到該筆存摺紀錄！");
+        return;
+      }
+      const meta = entry.meta || {};
+      // 1. 若關聯自由賽桌，直接開啟完整對戰歷史回顧！
+      if (meta.tableId) {
+        const tbl = (ctx.tables || []).find((t) => t.id === meta.tableId);
+        if (tbl) {
+          this.openTableHistoryModal(tbl.id);
+          return;
+        }
+      }
+      // 2. 若關聯秘密任務或神隊友打卡申請，直接開啟任務認證時間＆投票明細！
+      if (meta.claimId) {
+        const clm = (ctx.claims || []).find((c) => c.id === meta.claimId);
+        if (clm) {
+          this.openClaimDetailModal(clm.id);
+          return;
+        }
+      }
+      // 向下相容舊格式 badgeId = `${code}_chore_...`
+      if (entry.category === "badge" && String(entry.id || "").includes("chore_")) {
+        const matchedClaim = (ctx.claims || []).find((c) => String(entry.id).endsWith(c.id));
+        if (matchedClaim) {
+          this.openClaimDetailModal(matchedClaim.id);
+          return;
+        }
+      }
+
+      // 3. 主題遊戲／徽章／新年簽到禮／初始榮譽分／GM調整 完整存摺憑證回顧
+      const playerMap = {};
+      (ctx.players || []).forEach((p) => (playerMap[p.id] = p));
+      let extraHtml = "";
+      if (meta.sessionId) {
+        const s = (ctx.themeSessions || []).find((x) => x.id === meta.sessionId);
+        if (s) {
+          const tMeta = (window.ThemeGamesUI?.THEME_LIST || []).find((x) => x.id === s.theme_type) || {
+            icon: "🎪",
+            name: s.theme_type,
+          };
+          const sLedgers = (ctx.ledger || []).filter(
+            (l) => l.meta?.sessionId === s.id && l.player_id === entry.player_id
+          );
+          const totalInSession = sLedgers.reduce((acc, x) => acc + (Number(x.delta) || 0), 0);
+          extraHtml = `
+            <div class="section-card" style="margin-top:10px;">
+              <div class="sub-label">${tMeta.icon} 所屬主題場次：【${esc(tMeta.name)}】</div>
+              <div class="muted-xs" style="margin-top:4px;">參與人數：${(s.participants || []).length} 人 ｜ 你在本場累積共拿 <b class="gold-text">+${totalInSession} PT</b>（${sLedgers.length} 筆得分）</div>
+              <div style="margin-top:8px;max-height:180px;overflow-y:auto;">
+                ${sLedgers
+                  .map(
+                    (sl) => `<div class="history-row" style="font-size:12px;">
+                      <span>${esc(sl.reason)} <small class="muted-xs">(${esc(this.formatShortTime(sl.created_at))})</small></span>
+                      <b style="color:#6ee7b7;">+${sl.delta} PT</b>
+                    </div>`
+                  )
+                  .join("")}
+              </div>
+            </div>
+          `;
+        }
+      } else if (meta.detail) {
+        extraHtml = `<div class="toast-inline" style="margin-top:10px;">🏅 達成說明：${esc(meta.detail)}</div>`;
+      } else if (meta.approvals && Array.isArray(meta.approvals)) {
+        extraHtml = `
+          <div class="section-card" style="margin-top:10px;">
+            <div class="sub-label">🗳️ 認證通過名單：</div>
+            ${meta.approvals
+              .map(
+                (a) => `<div class="history-row" style="font-size:12px;">
+                  <span>${esc(playerMap[a.approver_id]?.name || a.approver_name || a.approver_id)}</span>
+                  <span class="muted-xs">✅ ${esc(this.formatFullTime(a.approved_at))}</span>
+                </div>`
+              )
+              .join("")}
+          </div>
+        `;
+      }
+
+      const categoryNames = {
+        initial: "🎉 報到紀念榮譽分",
+        party_play: "👏 賽桌完賽鼓勵",
+        party_entry: "🎮 賽桌參賽紀錄",
+        party_win: "🏆 賽桌獲勝獎勵",
+        party_refund: "⚖️ 賽桌平手獎勵",
+        happy_bonus: "🔥 限時加成獎勵",
+        cheer_entry: "📣 場邊應援紀錄",
+        cheer_win: "📣 場邊預測命中",
+        cheer_refund: "⚖️ 場邊預測平手",
+        mission: "🕵️ 個人秘密任務",
+        badge: "🎖️ 榮耀成就徽章",
+        theme: "🎪 主題團康遊戲",
+        nye_gift: "🎆 新年開運簽到禮",
+        gm_adjust: "👑 主辦人積分調整",
+      };
+
+      const modal = document.getElementById("party-modal");
+      const box = document.getElementById("party-modal-body");
+      if (!modal || !box) return;
+      modal.classList.remove("hidden");
+      box.innerHTML = `
+        <div class="modal-head">
+          <h3>📜 積分存摺明細回顧</h3>
+          <button class="btn-close" onclick="PartyGamesUI.closeModal()">✕</button>
+        </div>
+        <div class="section-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+            <span class="scene-pill pill-cyan">${esc(categoryNames[entry.category] || entry.category || "積分紀錄")}</span>
+            <b style="font-size:18px;color:${entry.delta >= 0 ? "#6ee7b7" : "#fda4af"};">
+              ${entry.delta >= 0 ? `+${entry.delta}` : entry.delta} PT
+            </b>
+          </div>
+          <div style="font-size:15px;font-weight:800;margin-top:8px;">${esc(entry.reason)}</div>
+          <div class="muted-xs" style="margin-top:8px;line-height:1.6;">
+            <div>🕒 入帳時間：<b>${esc(this.formatFullTime(entry.created_at))}</b></div>
+            <div>📅 歸屬活動日：${esc(entry.day_key || "--")}</div>
+          </div>
+        </div>
+        ${extraHtml}
+        <button class="btn btn-gold" style="width:100%;margin-top:12px;" onclick="PartyGamesUI.closeModal()">
+          ✕ 關閉視窗
+        </button>
+      `;
+    },
+
     // ==================== 個人互動與認證 Actions ====================
     openAvatarPickerModal() {
       const ctx = this.getContext();
@@ -2834,7 +3558,7 @@
         trueFact: v("sh27-true"),
         fakeFacts: [
           v("sh27-f1") || "已經偷偷報名繳費了",
-          v("sh27-f2") || "是為了跟朋友打賭贏大餐",
+          v("sh27-f2") || "是為了跟朋友約好挑戰成功吃大餐",
           v("sh27-f3") || "準備拉在場某個人一起去",
         ],
       };
@@ -2864,7 +3588,8 @@
       try {
         await window.PartyFX.notify(
           "🎉 跨年英雄紀元推播測試成功！",
-          `${ctx.me.name}，你的手機通知橫幅與派對音效皆已就緒！`
+          `${ctx.me.name}，你的手機通知橫幅與派對音效皆已就緒！`,
+          { action: "open_stage" }
         );
       } catch (_) {}
       await window.PartyDB.update("players", `id=eq.${encodeURIComponent(ctx.me.id)}`, {
@@ -3071,8 +3796,16 @@
 
         const g = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}) };
         const dayKey = g.activeDayKey || "2026-12-31";
-        // 防重複申請檢查
-        const dup = (ctx.claims || []).some(
+        const myM = (ctx.missions || []).find((m) => m.id === `${ctx.me.id}_${dayKey}`);
+        const cardObj = (myM?.cards || []).find((c) => c.id === cardId);
+
+        // f: 從雲端強制檢查，若該任務卡已送出或已完成認證，絕不可重複建立第二次申請！
+        const freshClaims = await window.PartyDB.select(
+          "claims",
+          `applicant_id=eq.${encodeURIComponent(ctx.me.id)}`,
+          { forceNetwork: true }
+        ).catch(() => ctx.claims || []);
+        const dup = (freshClaims || []).some(
           (c) =>
             c.applicant_id === ctx.me.id &&
             c.mission_card_id === cardId &&
@@ -3080,11 +3813,12 @@
             c.status !== "rejected"
         );
         if (dup) {
+          this.toast("ℹ️ 這張任務已經送出或已完成認證囉！");
           window.PartyGamesUI.closeModal();
           await this.refreshAll();
           return;
         }
-        const claimId = `clm_${ctx.me.id}_${cardId}_${dayKey}_${Date.now().toString(36)}`;
+        const claimId = `clm_${ctx.me.id}_${cardId}_${dayKey}`;
 
         await window.PartyDB.upsert(
           "claims",
@@ -3094,6 +3828,7 @@
               claim_type: "hidden_mission",
               applicant_id: ctx.me.id,
               title: `隱藏任務【${cardTag}】`,
+              card_text: cardObj?.text || "",
               points: Number(g.hiddenMissionPoints) || 35,
               target_id: targetId,
               witness_ids: witnessIds,
@@ -3109,17 +3844,25 @@
 
         window.PartyGamesUI.closeModal();
         window.PartyFX.playTone("bell");
-        this.toast("📨 已送出認證請求！若選錯人可隨時點「撤回重選見證人」！");
+        this.toast("📨 已送出認證請求！若選錯人可於通過前點「撤回重選見證人」！");
         await this.refreshAll();
       });
     },
 
-    // c-2: 申請人主動撤回重選見證人（徹底移除該筆申請與審核紀錄，原本被點名的人將立刻完全看不到此訊息！）
+    // f: 申請人主動撤回重選見證人（雲端 CAS 鎖保護：一旦 status === 'approved' 絕對禁止撤回刪除！）
     async cancelMyPendingClaim(claimId) {
       return window.PartyDB.withLock(`cancel_clm_${claimId}`, async () => {
         const ctx = this.getContext();
-        const claim = (ctx.claims || []).find((c) => c.id === claimId);
-        if (!claim || claim.applicant_id !== ctx.me?.id || claim.status !== "pending") {
+        const tx = await window.PartyDB.transactRow("claims", claimId, (cur) => {
+          if (!cur) return undefined;
+          if (cur.applicant_id !== ctx.me?.id) return undefined;
+          if (cur.status !== "pending") return undefined;
+          return null;
+        });
+        if (!tx.committed) {
+          if (tx.snapshot && tx.snapshot.status === "approved") {
+            this.toast("🎉 該任務剛剛已經認證通過並入帳，無法撤回囉！");
+          }
           await this.refreshAll();
           return;
         }
@@ -3127,7 +3870,6 @@
           "claim_approvals",
           `claim_id=eq.${encodeURIComponent(claimId)}`
         );
-        await window.PartyDB.remove("claims", `id=eq.${encodeURIComponent(claimId)}`);
         this.seenClaimIds.delete(claimId);
         window.PartyFX.haptic("medium");
         this.toast("↺ 已撤回該筆認證申請！原見證人畫面已同步移除，你可以重新選擇見證人囉！");
@@ -3135,12 +3877,17 @@
       });
     },
 
-    // 被點名的當事人／見證人若發現對方點錯人，可一鍵退回重選（同樣徹底移除不卡死申請人！）
+    // f: 被點名的當事人／見證人退回重選（雲端 CAS 鎖保護：若已通過認證則絕不可退回刪除！）
     async rejectClaim(claimId) {
       return window.PartyDB.withLock(`reject_clm_${claimId}`, async () => {
-        const ctx = this.getContext();
-        const claim = (ctx.claims || []).find((c) => c.id === claimId);
-        if (!claim || claim.status !== "pending") {
+        const tx = await window.PartyDB.transactRow("claims", claimId, (cur) => {
+          if (!cur || cur.status !== "pending") return undefined;
+          return null;
+        });
+        if (!tx.committed) {
+          if (tx.snapshot && tx.snapshot.status === "approved") {
+            this.toast("🎉 該筆認證剛剛已完成通過並入帳！");
+          }
           await this.refreshAll();
           return;
         }
@@ -3148,7 +3895,6 @@
           "claim_approvals",
           `claim_id=eq.${encodeURIComponent(claimId)}`
         );
-        await window.PartyDB.remove("claims", `id=eq.${encodeURIComponent(claimId)}`);
         this.seenClaimIds.delete(claimId);
         window.PartyFX.haptic("medium");
         this.toast("↩️ 已退回該筆認證邀請，方便對方重新選擇正確見證人！");
@@ -3163,18 +3909,25 @@
       if (!badge) return;
       const g = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}) };
       const dayKey = g.activeDayKey || "2026-12-31";
+      const effNowMs = window.PartyEngine.getEffectiveNowMs(g, window.PartyDB.serverNowMs);
+      const todayCalDate = window.PartyEngine.taipeiParts(effNowMs).dateKey;
 
-      // 檢查次數上限
-      const myCount = (ctx.claims || []).filter(
+      const validClaims = (ctx.claims || []).filter(
         (c) =>
           c.applicant_id === ctx.me.id &&
           c.badge_code === badgeCode &&
-          c.status !== "rejected" &&
-          (badgeCode === "morning_bird" ? c.day_key === dayKey : true)
-      ).length;
-      const limit = badgeCode === "morning_bird" ? 1 : badge.maxCount || 2;
-      if (myCount >= limit) {
-        this.toast(`【${badge.name}】已達領取上限（${limit} 次）囉！`);
+          c.status !== "rejected"
+      );
+      const totalLimit = badge.maxCount || (badgeCode === "morning_bird" ? 3 : 2);
+      if (validClaims.length >= totalLimit) {
+        this.toast(`【${badge.name}】已達全程領取上限（${totalLimit} 次）囉！`);
+        return;
+      }
+      if (
+        badgeCode === "morning_bird" &&
+        validClaims.some((c) => this.getMorningBirdCalDate(c, dayKey) === todayCalDate)
+      ) {
+        this.toast(`🌅 今天（${todayCalDate}）已經申請過【${badge.name}】囉（每日限 1 次）！`);
         return;
       }
 
@@ -3193,8 +3946,9 @@
           <h3>${badge.icon} 申請【${esc(badge.name)}】(+${badge.points} PT)</h3>
           <button class="btn-close" onclick="PartyGamesUI.closeModal()">✕</button>
         </div>
-        <p class="muted-sm" style="margin-bottom:10px;">${esc(badge.desc)}</p>
-        <input id="chore-note" class="input-dark" style="margin-bottom:10px;" placeholder="簡短說明（例如：幫忙收拾火鍋碗盤 / 訂飲料）">
+        <p class="muted-sm" style="margin-bottom:8px;">${esc(badge.desc)}</p>
+        <div class="field-hint">💡 補充說明舉例：幫忙收拾火鍋碗盤 ／ 幫大家訂飲料</div>
+        <input id="chore-note" class="input-dark" style="margin-bottom:10px;" placeholder="選填簡短說明…">
         <div class="sub-label">勾選現場 ${badge.needWitness} 位見證夥伴幫忙按感謝認證：</div>
         <div class="owner-pick-grid" style="margin:8px 0 12px;">
           ${others
@@ -3221,78 +3975,120 @@
     },
 
     async submitChoreClaim(badgeCode) {
-      const ctx = this.getContext();
-      const badge = CFG.BADGE_CATALOG.find((b) => b.code === badgeCode);
-      if (!badge) return;
-      const checked = [...document.querySelectorAll(".chore-wit-chk:checked")].map((el) => el.value);
-      if (checked.length < badge.needWitness) {
-        this.toast(`請至少勾選 ${badge.needWitness} 位夥伴幫忙認證！`);
-        return;
-      }
-      if (badge.needLineAlbumCheck && !document.getElementById("chore-line-chk")?.checked) {
-        this.toast("📸 請先將照片上傳至 LINE 群組相簿，並勾選確認框喔！");
-        return;
-      }
-      const note = document.getElementById("chore-note")?.value.trim() || "";
-      const dayKey = ctx.globalCfg?.activeDayKey || "2026-12-31";
-      const cid = `chore_${badgeCode}_${ctx.me.id}_${Date.now()}`;
+      return window.PartyDB.withLock(`chore_claim_${badgeCode}`, async () => {
+        const ctx = this.getContext();
+        const badge = CFG.BADGE_CATALOG.find((b) => b.code === badgeCode);
+        if (!badge) return;
+        const checked = [...document.querySelectorAll(".chore-wit-chk:checked")].map((el) => el.value);
+        if (checked.length < badge.needWitness) {
+          this.toast(`請至少勾選 ${badge.needWitness} 位夥伴幫忙認證！`);
+          return;
+        }
+        if (badge.needLineAlbumCheck && !document.getElementById("chore-line-chk")?.checked) {
+          this.toast("📸 請先將照片上傳至 LINE 群組相簿，並勾選確認框喔！");
+          return;
+        }
+        const note = document.getElementById("chore-note")?.value.trim() || "";
+        const g = { ...CFG.DEFAULTS, ...(ctx.globalCfg || {}) };
+        const dayKey = g.activeDayKey || "2026-12-31";
+        const effNowMs = window.PartyEngine.getEffectiveNowMs(g, window.PartyDB.serverNowMs);
+        const todayCalDate = window.PartyEngine.taipeiParts(effNowMs).dateKey;
+        const freshClaims = await window.PartyDB.select(
+          "claims",
+          `applicant_id=eq.${encodeURIComponent(ctx.me.id)}`,
+          { forceNetwork: true }
+        ).catch(() => ctx.claims || []);
+        const validClaims = (freshClaims || []).filter(
+          (c) =>
+            c.applicant_id === ctx.me.id &&
+            c.badge_code === badgeCode &&
+            c.status !== "rejected"
+        );
+        const totalLimit = badge.maxCount || (badgeCode === "morning_bird" ? 3 : 2);
+        if (validClaims.length >= totalLimit) {
+          this.toast(`【${badge.name}】已達全程領取上限（${totalLimit} 次）囉！`);
+          window.PartyGamesUI.closeModal();
+          await this.refreshAll();
+          return;
+        }
+        if (
+          badgeCode === "morning_bird" &&
+          validClaims.some((c) => this.getMorningBirdCalDate(c, dayKey) === todayCalDate)
+        ) {
+          this.toast(`🌅 今天（${todayCalDate}）已經申請過【${badge.name}】囉（每日限 1 次）！`);
+          window.PartyGamesUI.closeModal();
+          await this.refreshAll();
+          return;
+        }
+        const cid = `chore_${badgeCode}_${ctx.me.id}_${Date.now()}`;
 
-      await window.PartyDB.upsert("claims", [
-        {
-          id: cid,
-          claim_type: badgeCode === "morning_bird" ? "morning_bird" : "chore_badge",
-          badge_code: badgeCode,
-          applicant_id: ctx.me.id,
-          title: `${badge.name}${note ? `（${note}）` : ""}`,
-          points: badge.points,
-          target_id: null,
-          witness_ids: checked,
-          required_approvals: badge.needWitness,
-          photo_url: badge.needLineAlbumCheck ? "LINE_ALBUM" : "",
-          day_key: dayKey,
-          status: "pending",
-        },
-      ]);
+        await window.PartyDB.upsert("claims", [
+          {
+            id: cid,
+            claim_type: badgeCode === "morning_bird" ? "morning_bird" : "chore_badge",
+            badge_code: badgeCode,
+            applicant_id: ctx.me.id,
+            title: `${badge.name}${note ? `（${note}）` : ""}`,
+            points: badge.points,
+            target_id: null,
+            witness_ids: checked,
+            required_approvals: badge.needWitness,
+            photo_url: badge.needLineAlbumCheck ? "LINE_ALBUM" : "",
+            day_key: dayKey,
+            calendar_date: todayCalDate,
+            status: "pending",
+          },
+        ]);
 
-      window.PartyGamesUI.closeModal();
-      window.PartyFX.playTone("bell");
-      this.toast("🙌 已發送認證請求！");
-      await this.refreshAll();
+        window.PartyGamesUI.closeModal();
+        window.PartyFX.playTone("bell");
+        this.toast("🙌 已發送認證請求！");
+        await this.refreshAll();
+      });
     },
 
-    // --- 當事人／見證人按下同意認證（CAS + 冪等防呆自動派分！） ---
+    // --- p & S7: 當事人／見證人按下同意認證（強制雲端直連驗票 + CAS 原子結算 + 即時入帳存摺與後台！） ---
     async approveClaim(claimId, role) {
       return window.PartyDB.withLock(`approve_clm_${claimId}`, async () => {
         const ctx = this.getContext();
-        // 先重新確認該筆 claim 是否仍存在且未撤回！
+        const nowIso = new Date(window.PartyDB.serverNowMs).toISOString();
+
+        // 1. 強制從雲端抓取最新 claim，絕不讀過期快取！
         const freshClaims = await window.PartyDB.select(
           "claims",
-          `id=eq.${encodeURIComponent(claimId)}`
+          `id=eq.${encodeURIComponent(claimId)}`,
+          { forceNetwork: true }
         );
         const claim = freshClaims && freshClaims[0];
-        if (!claim || claim.status !== "pending") {
-          this.toast("ℹ️ 該筆認證申請已被撤回或已完成結算！");
+        if (!claim) {
+          this.toast("ℹ️ 該筆認證申請已被撤回！");
           await this.refreshAll();
           return;
         }
 
-        await window.PartyDB.upsert(
-          "claim_approvals",
-          [
-            {
-              id: `${claimId}_${ctx.me.id}`,
-              claim_id: claimId,
-              approver_id: ctx.me.id,
-              role,
-            },
-          ],
-          { ignoreDuplicates: true }
-        );
+        // 2. 寫入本人的同意票（附帶精確投票時間與暱稱）
+        if (claim.status === "pending") {
+          await window.PartyDB.upsert(
+            "claim_approvals",
+            [
+              {
+                id: `${claimId}_${ctx.me.id}`,
+                claim_id: claimId,
+                approver_id: ctx.me.id,
+                approver_name: ctx.me.name || "",
+                role,
+                approved_at: nowIso,
+              },
+            ],
+            { ignoreDuplicates: true }
+          );
+        }
 
-        // 重新撈取最新該筆 claim 的所有有效同意票，檢查是否達標
+        // 3. 強制從雲端直連撈取該筆 claim 目前全部同意票（徹底根除雙人同時按確認漏讀彼此選票的 Bug！）
         const approvals = await window.PartyDB.select(
           "claim_approvals",
-          `claim_id=eq.${encodeURIComponent(claimId)}`
+          `claim_id=eq.${encodeURIComponent(claimId)}`,
+          { forceNetwork: true }
         );
         const approverIds = new Set((approvals || []).map((a) => a.approver_id));
 
@@ -3308,14 +4104,28 @@
           passed = validApprovers.length >= (claim.required_approvals || 1);
         }
 
-        if (passed) {
+        if (passed || claim.status === "approved") {
+          const approvalsSnapshot = (approvals || []).map((a) => ({
+            approver_id: a.approver_id,
+            approver_name: a.approver_name || "",
+            role: a.role || "",
+            approved_at: a.approved_at || a.created_at || nowIso,
+          }));
           const tx = await window.PartyDB.transactRow("claims", claimId, (cur) => {
             if (!cur || cur.status !== "pending") return undefined;
             cur.status = "approved";
+            cur.approved_at = nowIso;
+            cur.updated_at = nowIso;
+            cur.approvals_snapshot = approvalsSnapshot;
             return cur;
           });
 
-          if (tx.committed) {
+          const settledClaim = tx.snapshot || claim;
+          const settledAt = settledClaim.approved_at || nowIso;
+          const finalApprovals = settledClaim.approvals_snapshot || approvalsSnapshot;
+
+          // 冪等確保積分與徽章 100% 立即寫入 ledger 與後台（即使前一台手機中途斷網也會自動補齊，且絕不重複發分！）
+          if (tx.committed || settledClaim.status === "approved") {
             if (claim.badge_code) {
               await window.PartyEngine.awardBadgeOnce(
                 `${claim.badge_code}_${claimId}`,
@@ -3324,20 +4134,34 @@
                 claim.points,
                 claim.title,
                 "同伴見證認證通過",
-                claim.day_key
+                claim.day_key,
+                {
+                  claimId: claim.id,
+                  approvedAt: settledAt,
+                  approvals: finalApprovals,
+                }
               );
             } else {
+              const rewardId = claim.mission_card_id
+                ? `msn_reward_${claim.applicant_id}_${claim.day_key}_${claim.mission_card_id}`
+                : `claim_reward_${claim.id}`;
               await window.PartyDB.upsert(
                 "ledger",
                 [
                   {
-                    id: `claim_reward_${claim.id}`,
+                    id: rewardId,
                     player_id: claim.applicant_id,
                     delta: Number(claim.points) || 35,
                     category: "mission",
                     reason: `🕵️ 達成${claim.title}`,
                     day_key: claim.day_key,
-                    meta: { claimId: claim.id },
+                    meta: {
+                      claimId: claim.id,
+                      missionCardId: claim.mission_card_id || "",
+                      approvedAt: settledAt,
+                      targetId: claim.target_id || null,
+                      approvals: finalApprovals,
+                    },
                   },
                 ],
                 { ignoreDuplicates: true }
@@ -3345,12 +4169,13 @@
             }
           }
           window.PartyFX.playTone("win");
+          this.toast(`🎉 認證達標通過！已立即為對方入帳 +${claim.points} PT！`);
         } else {
           window.PartyFX.haptic("medium");
+          this.toast("✅ 已送出你的認證！（等待另一位見證夥伴確認）");
         }
 
-        this.toast("✅ 已送出你的認證！");
-        await this.refreshAll();
+        await this.refreshAll({ isFirst: false, background: false });
       });
     },
   };
