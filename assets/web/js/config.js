@@ -57,7 +57,7 @@ window.PARTY_CONFIG = {
       wifiSsid: "Villa_VIP_5G",
       wifiPass: "happy2027",
       doorCode: "1231#",
-      notes: "🔔 活動期間請打開手機通知與鈴聲！拍照任務請傳至 LINE 群組相簿後回 App 打勾即可！"
+      notes: "🔔 活動期間請打開手機通知與鈴聲！拍照任務請傳至派對群組相簿後回 App 打勾即可！"
     },
     roomsList: [
       { id: "R201", name: "201 雙人景觀房", floor: "2F", capacity: 2 },
@@ -71,14 +71,14 @@ window.PARTY_CONFIG = {
   // 四天三夜預設自動排程表（時間一到自動切換場景！每天 08:00 自動重置賽桌與應援預測次數！）
   DEFAULT_SCHEDULE: [
     { id: "s01", day: "12/31 (四)", start: "2026-12-31T19:00", end: "2026-12-31T20:30", scene: "dining", themeType: "", title: "抵達民宿 Check-in ＆ 跨年晚餐", desc: "查看秘密神隊友搭檔、鎖定首日隱藏任務、記得打開手機鈴聲！" },
-    { id: "s02", day: "12/31 (四)", start: "2026-12-31T20:30", end: "2026-12-31T22:00", scene: "theme", themeType: "poll_minority", title: "破冰團康：匿名爆料派對 ＋ 頻率同步", desc: "全員點擊加入主題房，趣味快問快答累積榮譽積分！" },
+    { id: "s02", day: "12/31 (四)", start: "2026-12-31T20:30", end: "2026-12-31T22:00", scene: "theme", themeType: "poll_minority", title: "破冰團康：匿名爆料派對 ＋ 心電頻率同步", desc: "全員點擊加入主題房，趣味快問快答累積榮譽積分！" },
     { id: "s03", day: "12/31 (四)", start: "2026-12-31T22:00", end: "2026-12-31T23:55", scene: "theme", themeType: "share_2026_2027", title: "跨年重頭戲：跨年英雄紀元・分享篇", desc: "兩輪盲猜所有人的 2026 年度故事與 2027 新年願望！" },
     { id: "s04", day: "12/31 (四)", start: "2026-12-31T23:55", end: "2027-01-01T00:15", scene: "nye_gift", themeType: "nye_checkin", title: "🎆 2027 跨年煙火倒數 ＆ 新年簽到禮", desc: "全場手機同步跨年煙火，00:00 點擊領取 +50 PT 新年開運簽到禮！" },
     { id: "s05", day: "1/1 (五)", start: "2027-01-01T00:15", end: "2027-01-01T02:30", scene: "happy_hour", themeType: "", title: "🔥 2027 午夜首場 Happy Hour (+50%)", desc: "自由開 1~3 分鐘賽桌揪團挑戰與免費場邊預測！" },
     { id: "s06", day: "1/1 (五)", start: "2027-01-01T08:00", end: "2027-01-01T10:30", scene: "dining", themeType: "", title: "☀️ 元旦早餐 ＆ 08:00 每日額度刷新", desc: "每日參賽/預測次數歸零重置、早安陽光鳥打卡、抽取新隱藏任務！" },
-    { id: "s07", day: "1/1 (五)", start: "2027-01-01T10:30", end: "2027-01-01T12:30", scene: "party", themeType: "", title: "🎲 元旦早場自由賽桌時間", desc: "推薦開桌：Switch／2v2 靈魂默契／ito 順風耳／終極密碼" },
+    { id: "s07", day: "1/1 (五)", start: "2027-01-01T10:30", end: "2027-01-01T12:30", scene: "party", themeType: "", title: "🎲 元旦早場自由賽桌時間", desc: "推薦開桌：電玩派對擂台／2v2 靈魂默契／數字順風耳／終極密碼" },
     { id: "s08", day: "1/1 (五)", start: "2027-01-01T12:30", end: "2027-01-01T15:00", scene: "dining", themeType: "", title: "🍽️ 元旦午餐與午休社交", desc: "好好吃飯聊天，順便解個人 Chill 隱藏任務！" },
-    { id: "s09", day: "1/1 (五)", start: "2027-01-01T15:00", end: "2027-01-01T17:00", scene: "theme", themeType: "find_figurine", title: "🏃‍♂️ 下午實體大戰：尋找真實小人雙隊攻防", desc: "上下半場藏匿提示＋找到後拍傳 LINE 群組打勾計時，最快隊伍每人 +100 PT！" },
+    { id: "s09", day: "1/1 (五)", start: "2027-01-01T15:00", end: "2027-01-01T17:00", scene: "theme", themeType: "find_figurine", title: "🏃‍♂️ 下午實體大戰：尋找真實小人雙隊攻防", desc: "上下半場藏匿提示＋找到後拍傳群組相簿打勾計時，最快隊伍每人 +100 PT！" },
     { id: "s10", day: "1/1 (五)", start: "2027-01-01T17:00", end: "2027-01-01T20:00", scene: "dining", themeType: "", title: "🍽️ 元旦晚餐社交時光", desc: "幫忙訂餐／收拾記得找 2 位朋友認證【民宿神隊友打卡】！" },
     { id: "s11", day: "1/1 (五)", start: "2027-01-01T20:00", end: "2027-01-02T01:00", scene: "happy_hour", themeType: "", title: "🔥 元旦黃金社交夜 (Happy Hour +50%)", desc: "跟超過 8 位不同朋友同桌玩可自動解鎖【雨露均霑 +40 PT】！" },
     { id: "s12", day: "1/2 (六)", start: "2027-01-02T08:00", end: "2027-01-02T10:30", scene: "dining", themeType: "", title: "☀️ 週六早餐 ＆ 08:00 每日額度刷新", desc: "每日參賽/預測次數歸零重置、早安陽光鳥打卡、抽取新隱藏任務！" },
@@ -95,14 +95,14 @@ window.PARTY_CONFIG = {
     {
       id: "switch_free",
       icon: "🎮",
-      name: "Switch 自由對決",
+      name: "電玩派對擂台",
       minPlayers: 2,
       maxPlayers: 8,
       cheerMode: "player",
-      desc: "不限遊戲（賽車／大亂鬥／派對），免費參賽贏取勝利榮譽積分（支援複選並列第 1 均分）！",
-      howToPlay: "桌長開桌可備註要玩的 Switch 遊戲（如瑪利歐賽車、大亂鬥、派對小遊戲）。主機實體比完一局後，在手機勾選「本局獲勝贏家（可複選多位並列第 1）」，經對手按確認即自動發放勝利榮譽積分！",
+      desc: "支援現場電視主機賽車／亂鬥／體感派對計分，免費參賽贏取勝利榮譽積分（可複選並列第 1 均分）！",
+      howToPlay: "桌長開桌可備註現場要玩的電視主機或桌面派對項目（如競速賽車、派對亂鬥、體感小遊戲）。現場比完一局後，在手機勾選「本局獲勝贏家（可複選多位並列第 1）」，經對手按確認即自動發放勝利榮譽積分！",
       scoringRule: "免費參賽不扣分！勝利總榮譽分依人數規模提升（如 2人局 +30 PT、4人局 +60 PT；🔥限時加成再 +50%），單人奪冠獨得、多位並列第 1 均分（保底 +20 PT），完賽未勝亦得 +5 PT 參與鼓勵分！",
-      achievementRule: "👑【Switch 大魔王 +80 PT】：不限一般或限時加成時段，活動期間「計分局」累積奪冠次數最高者（最高並列則同獲），於終局結算獲得！"
+      achievementRule: "👑【電玩大魔王 +80 PT】：不限一般或限時加成時段，活動期間「計分局」累積奪冠次數最高者（最高並列則同獲），於終局結算獲得！"
     },
     {
       id: "quick_draw",
@@ -152,7 +152,7 @@ window.PARTY_CONFIG = {
     {
       id: "ito_numbers",
       icon: "🔢",
-      name: "數字順風耳 ito",
+      name: "數字順風耳",
       minPlayers: 3,
       maxPlayers: 8,
       cheerMode: "coop",
@@ -177,7 +177,7 @@ window.PARTY_CONFIG = {
   BADGE_CATALOG: [
     // 👑 結算唯一冠 (+80 PT，終局結算自動頒發)
     { code: "crown_social", tier: "crown", icon: "👑", name: "社交恐怖分子", points: 80, auto: true, desc: "活動期間與最多「不同朋友」同桌遊戲＋互動解任務第 1 名" },
-    { code: "crown_switch", tier: "crown", icon: "👑", name: "Switch 大魔王", points: 80, auto: true, desc: "Switch 計分局累積奪冠次數最高者（不限時段，並列同獲）" },
+    { code: "crown_switch", tier: "crown", icon: "👑", name: "電玩大魔王", points: 80, auto: true, desc: "電玩派對擂台計分局累積奪冠次數最高者（不限時段，並列同獲）" },
     { code: "crown_prophet", tier: "crown", icon: "👑", name: "神預言家", points: 80, auto: true, desc: "場邊免費應援預測命中率最高者" },
     { code: "crown_agent", tier: "crown", icon: "👑", name: "王牌特務", points: 80, auto: true, desc: "個人 Chill 隱藏任務累計完成數第 1 名" },
 
@@ -198,7 +198,7 @@ window.PARTY_CONFIG = {
     { code: "chore_clean", tier: "chore", icon: "🧹", name: "家事小精靈", points: 40, auto: false, maxCount: 2, needWitness: 2, desc: "用餐／派對後主動收拾桌面、洗碗盤或倒垃圾（2位朋友認證，限2次）" },
     { code: "chore_chef", tier: "chore", icon: "🍳", name: "大廚備料王", points: 40, auto: false, maxCount: 2, needWitness: 2, desc: "幫忙下廚煮火鍋、烤肉、切水果或準備宵夜（2位朋友認證，限2次）" },
     { code: "chore_driver", tier: "chore", icon: "🚗", name: "平安御用司機", points: 40, auto: false, maxCount: 1, needWitness: 2, desc: "跨年行程負責開車載大家往返或採買（2位同車認證，限1次）" },
-    { code: "chore_photo", tier: "chore", icon: "📸", name: "回憶攝影師", points: 30, auto: false, maxCount: 2, needWitness: 2, needLineAlbumCheck: true, desc: "幫大家拍大合照或活動側拍並傳到 LINE 群組相簿（2位朋友認證，限2次）" },
+    { code: "chore_photo", tier: "chore", icon: "📸", name: "回憶攝影師", points: 30, auto: false, maxCount: 2, needWitness: 2, needLineAlbumCheck: true, desc: "幫大家拍大合照或活動側拍並傳到派對群組相簿（2位朋友認證，限2次）" },
     { code: "morning_bird", tier: "morning", icon: "🌅", name: "晨間陽光鳥", points: 30, auto: false, maxCount: 3, needWitness: 1, desc: "早上 06:30～09:00 在客廳早起並與 1 位早起夥伴互證（每自然日限1次，全程限3次）" }
   ],
 

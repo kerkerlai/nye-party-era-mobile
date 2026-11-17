@@ -1037,7 +1037,7 @@
       return `
         <div class="grid-2-btns" style="margin-bottom:6px;">
           <input id="bk-f1" class="input-dark" placeholder="任務代號（如：茶水天使）">
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" id="bk-photo"> 需拍傳 LINE 相簿</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" id="bk-photo"> 需拍傳群組相簿</label>
         </div>
         <input id="bk-f2" class="input-dark" placeholder="任務說明內容">
       `;
@@ -1084,7 +1084,7 @@
         <div class="section-card">
           <div class="section-title">🧪 4 人秘密彩排・時光機快速推進器</div>
           <p class="muted-sm" style="margin-bottom:10px;">
-            透過加減時間 Offset 快轉或倒退「模擬排程時間」，讓你直接測試完整的<b>自動開賽倒數、自動切換時段、跨日 08:00 回血與自動終局結算</b>！
+            透過加減時間 Offset 快轉或倒退「模擬排程時間」，讓你直接測試完整的<b>自動開賽倒數、自動切換時段、跨日 08:00 額度重置與自動終局結算</b>！
           </p>
 
           <div class="clock-compare-box">
@@ -1905,6 +1905,10 @@
 
       if (!item) {
         window.PartyApp.toast("請完整填寫題目欄位！");
+        return;
+      }
+      if (window.PartyApp.containsObjectionableText?.(JSON.stringify(item))) {
+        window.PartyApp.toast("🚫 自訂題目包含不雅或違規字詞，請修改後再新增！");
         return;
       }
       banks[cat] = [item, ...(banks[cat] || [])];

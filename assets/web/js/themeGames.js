@@ -46,7 +46,7 @@
     {
       id: "wavelength",
       icon: "📡",
-      name: "頻率同步 Wavelength",
+      name: "心電頻率同步",
       sub: "發訊員口頭暗示刻度，全員拉 0～100 滑桿猜靶心 (+15~50 PT)",
       rules: [
         "每輪系統隨機指派 1 位玩家當【🎙️ 發訊員】，並抽出一道 0～100 雙端光譜題（如：0 完全過譽地雷 ◀──▶ 100 一生必推神作）。",
@@ -65,13 +65,13 @@
       sub: "動態配比平民／臥底／白板，自動盲抽發詞投票抓鬼 (+20~90 PT)",
       rules: [
         "系統依入房人數自動隨機發詞：平民拿相同詞、臥底拿相近詞、5人以上自動混入 1 名無詞「白板」（7~11人配 2臥底+1白板；12~14人配 3臥底+1白板），Host 也能一起抽牌下場抓鬼！",
-        "每輪依畫面列出的發言順序「各講一句話形容自己的詞」（禁講出詞面字眼、禁直接照抄別人描述），講完後全員手機投票處決最高票者（平票則補講重投）。",
+        "每輪依畫面列出的發言順序「各講一句話形容自己的詞」（禁講出詞面字眼、禁直接照抄別人描述），講完後全員手機投票淘汰最高票者（平票則補講重投）。",
         "勝負條件：所有臥底與白板出局 ➜ 平民獲勝；若存活「臥底+白板人數 ≥ 存活平民人數」（或剩 2 人仍未抓完）➜ 內鬼陣營獲勝！"
       ],
       scoring: [
         "🛡️ 平民陣營獲勝：存活平民每人 +40 PT，中途出局平民躺贏 +20 PT。",
         "😈 內鬼陣營獲勝：存活臥底 +70 PT（出局臥底 +35 PT）、存活白板 +90 PT（出局白板 +30 PT）。",
-        "🎯 精準抓鬼獎：每輪正式處決開票時（平票重投不重複計），平民只要投中真正的臥底或白板，當下立即額外 +5 PT！"
+        "🎯 精準抓鬼獎：每輪正式淘汰開票時（平票重投不重複計），平民只要投中真正的臥底或白板，當下立即額外 +5 PT！"
       ],
       achievements: ["🕵️【影帝級臥底 +40 PT】：擔任臥底或白板，且內鬼陣營獲勝時仍「存活」即自動獲得！"]
     },
@@ -83,7 +83,7 @@
       rules: [
         "全員點擊加入房間後，由 Host (GM) 統一設定搜尋時間並隨機平分為 A 隊 vs B 隊（上下半場攻守交換：上半場 A 藏 B 找，下半場 B 藏 A 找）。",
         "藏匿規範：限民宿公共區域，禁止藏個人行李、廁所馬桶或危險高處，每隻實體小人至少須露出 1/3 身體可見！藏好後由 Host (GM) 按下開始啟動全場倒數計時。",
-        "搜尋打卡：開始後全員手機同步顯示倒數計時；搜尋隊每找到 1 隻小人，立刻拿走實體小人並拍照傳到 LINE 群組相簿，在手機對應編號打勾按「✅ 打卡收繳計時」鎖定秒數！"
+        "搜尋打卡：開始後全員手機同步顯示倒數計時；搜尋隊每找到 1 隻小人，立刻拿走實體小人並拍照傳到派對群組相簿，在手機對應編號打勾按「✅ 打卡收繳計時」鎖定秒數！"
       ],
       scoring: [
         "⚖️ 勝負判定：上下半場結束後，先比「尋獲總隻數多者勝」；若兩隊找齊相同隻數，則比「找到最後一隻的總耗時較短者勝」！",
@@ -401,6 +401,15 @@
       const myResp = resps.find((r) => r.player_id === me.id);
       const isEditingShare = this.editingShareStepKey === stepKey;
       const isStoryOwner = cur.ownerId === me.id;
+      const isOwnerBlocked = Boolean(
+        window.PartyApp.isPlayerBlocked && window.PartyApp.isPlayerBlocked(cur.ownerId)
+      );
+      const isStepHidden = this.isShareStepHidden(session.id, stepKey);
+      const isMasked = isOwnerBlocked || isStepHidden;
+      const displayStory = isMasked ? "🚫 [已隱藏此題封鎖或不當內容]" : cur.story;
+      const displayOptions = (cur.options || []).map((opt) =>
+        isMasked ? "[已隱藏選項]" : opt
+      );
 
       return `
         <div class="mini-game-box">
@@ -414,7 +423,14 @@
               : ""
           }
 
-          <div class="story-quote">「${esc(cur.story)}」</div>
+          <div class="story-quote">「${esc(displayStory)}」</div>
+          ${
+            !isStoryOwner && !isMasked
+              ? `<div style="display:flex;justify-content:flex-end;margin-top:4px;">
+                   <button type="button" class="btn-copy" style="font-size:11px;opacity:0.8;" onclick="ThemeGamesUI.reportShareItem('${esc(session.id)}','${esc(stepKey)}')">🚩 檢舉／隱藏此題不當內容</button>
+                 </div>`
+              : ""
+          }
 
           ${
             isStoryOwner && !st.revealed
@@ -448,7 +464,7 @@
 
                   <div class="sub-label" style="margin-top:10px;">Step 2：以下 4 個細節，哪一個才是「真實事實」？（+10 PT）</div>
                   <div class="opt-grid">
-                    ${cur.options
+                    ${displayOptions
                       .map(
                         (opt, oIdx) => `<button class="opt-btn ${this.localShareFactPick === oIdx ? "selected" : ""}"
                           onclick="ThemeGamesUI.localShareFactPick=${oIdx};PartyApp.render();">
@@ -477,7 +493,7 @@
                     🎉 真相揭曉！故事主人是：【${esc(playerMap[cur.ownerId]?.name || cur.ownerId)}】（獲得分享獎 +15 PT）
                   </div>
                   <div style="margin-top:6px;color:#6ee7b7;font-weight:700;">
-                    ✅ 真實細節是：${["A", "B", "C", "D"][cur.trueIdx]}. ${esc(cur.options[cur.trueIdx])}
+                    ✅ 真實細節是：${["A", "B", "C", "D"][cur.trueIdx]}. ${esc(displayOptions[cur.trueIdx])}
                   </div>
                   <div class="muted-xs" style="margin-top:8px;">
                     本題雙殺 +20 PT 神探：${
@@ -509,6 +525,47 @@
           }
         </div>
       `;
+    },
+
+    isShareStepHidden(sessionId, stepKey) {
+      try {
+        const raw = localStorage.getItem("nye_hidden_share_keys");
+        const arr = raw ? JSON.parse(raw) : [];
+        return arr.includes(`${sessionId}_${stepKey}`);
+      } catch (_) {
+        return false;
+      }
+    },
+
+    async reportShareItem(sessionId, stepKey) {
+      const ctx = window.PartyApp.getContext();
+      const s = (ctx.themeSessions || []).find((x) => x.id === sessionId);
+      const st = s?.state || {};
+      const cur = (st.items || [])[st.idx || 0];
+      if (!ctx.me || !cur) return;
+      try {
+        const raw = localStorage.getItem("nye_hidden_share_keys");
+        const set = new Set(raw ? JSON.parse(raw) : []);
+        set.add(`${sessionId}_${stepKey}`);
+        localStorage.setItem("nye_hidden_share_keys", JSON.stringify([...set]));
+      } catch (_) {}
+      const targetPlayer = (ctx.players || []).find((p) => p.id === cur.ownerId);
+      await window.PartyDB.upsert("theme_responses", [
+        {
+          id: `ugc_rep_${ctx.me.id}_${sessionId}_${stepKey}`,
+          session_id: "ugc_reports",
+          step_key: "report",
+          player_id: ctx.me.id,
+          payload: {
+            targetId: cur.ownerId,
+            targetName: targetPlayer?.name || cur.ownerId,
+            reporterName: ctx.me.name,
+            reportedAt: new Date().toISOString(),
+          },
+        },
+      ]);
+      window.PartyApp.toast("✅ 已在本機隱藏本題內容，並通知主辦人審核！");
+      await window.PartyApp.refreshAll();
     },
 
     beginEditShareGuess(stepKey, ownerPick, factPick) {
@@ -855,7 +912,7 @@
       `;
     },
 
-    // ==================== 3. 📡 頻率同步 Wavelength ====================
+    // ==================== 3. 📡 心電頻率同步 ====================
     renderWavelength(session, ctx, isHost, playerMap) {
       const { me, themeResponses } = ctx;
       const st = session.state || {};
@@ -1073,14 +1130,14 @@
                       ? `<div class="my-cheer-tag" style="margin-bottom:8px;text-align:center;">
                            ✅ 本輪你目前投給：<b>${esc(playerMap[myVote.payload?.targetId]?.name || "")}</b>（已投 ${resps.length}/${aliveIds.length} 人，Host 截止開票前可隨時改票！）
                          </div>`
-                      : `<div class="sub-label">🗳️ 發言完畢請投票指認誰是內鬼（正式處決投對內鬼額外 +5 PT，開票前可隨時改票）：</div>`
+                      : `<div class="sub-label">🗳️ 發言完畢請投票指認誰是內鬼（正式淘汰投對內鬼額外 +5 PT，開票前可隨時改票）：</div>`
                   }
                   <div class="owner-pick-grid">
                     ${aliveIds
                       .filter((id) => id !== me.id)
                       .map(
                         (id) => `<button class="chip-select ${myVote?.payload?.targetId === id ? "selected" : ""}" onclick="ThemeGamesUI.voteUndercover('${session.id}','${stepKey}','${id}')">
-                          ${myVote?.payload?.targetId === id ? "✅ " : ""}處決 ${esc(playerMap[id]?.name || id)}
+                          ${myVote?.payload?.targetId === id ? "✅ " : ""}指認淘汰 ${esc(playerMap[id]?.name || id)}
                         </button>`
                       )
                       .join("")}
@@ -1098,7 +1155,7 @@
               ? `<div class="host-row" style="margin-top:12px;">
                   ${
                     !st.gameOver
-                      ? `<button class="btn btn-gold" onclick="ThemeGamesUI.tallyUndercover('${session.id}')">⚖️ 截止開票處決！</button>`
+                      ? `<button class="btn btn-gold" onclick="ThemeGamesUI.tallyUndercover('${session.id}')">⚖️ 截止開票淘汰！</button>`
                       : `<button class="btn btn-gold" onclick="ThemeGamesUI.dealUndercover('${session.id}')">🔄 再來一局（換新詞重發）</button>`
                   }
                 </div>`
@@ -1118,7 +1175,7 @@
         return `
           <div class="mini-game-box">
             <div class="q-title">🏃‍♂️《實體小人雙隊攻防戰》</div>
-            <p class="muted-sm">目前已加入 ${joinedPlayers.length} 人。分上下半場攻守交換，找到小人後<b>拍照傳至 LINE 群組相簿＋勾選打卡自動計時</b>（免上傳檔案零卡頓！），最快隊伍全隊每人 +100 PT！</p>
+            <p class="muted-sm">目前已加入 ${joinedPlayers.length} 人。分上下半場攻守交換，找到小人後<b>拍照傳至派對群組相簿＋勾選打卡自動計時</b>（免上傳檔案零卡頓！），最快隊伍全隊每人 +100 PT！</p>
             ${
               isHost
                 ? `<div class="grid-2-btns" style="margin-top:10px;">
@@ -1221,11 +1278,11 @@
                           ${
                             found
                               ? `<div class="gold-text" style="font-size:12px;">✅ ${(found.payload.elapsedMs / 1000).toFixed(1)}s 尋獲 (${esc(playerMap[found.player_id]?.name)})</div>
-                                 <div class="muted-xs" style="margin-top:2px;">📸 已傳 LINE 相簿打卡</div>`
+                                 <div class="muted-xs" style="margin-top:2px;">📸 已傳群組相簿打卡</div>`
                               : amSearcher && remainSec > 0
                               ? `<label class="fig-line-chk">
                                    <input type="checkbox" id="fig-chk-${key}" ${isChecked ? "checked" : ""} onchange="ThemeGamesUI.toggleFigLineCheck('${fullChkKey}', this.checked)">
-                                   <span>已拍照傳 LINE 相簿</span>
+                                   <span>已拍照傳群組相簿</span>
                                  </label>
                                  <button class="btn btn-primary btn-xs" style="margin-top:5px;width:100%;" onclick="ThemeGamesUI.checkInFigurine('${session.id}','${key}')">
                                    ✅ 打卡收繳計時
@@ -1737,6 +1794,10 @@
         window.PartyApp.toast("請輸入插播題目內容！");
         return;
       }
+      if (window.PartyApp.containsObjectionableText?.(q)) {
+        window.PartyApp.toast("🚫 插播題目包含不雅或違規字詞，請修改後再發送！");
+        return;
+      }
       const cur = s.state || { qIdx: 0, roundSeq: 0 };
       await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
         status: "active",
@@ -2016,7 +2077,7 @@
           return await window.PartyApp.refreshAll();
         }
 
-        // 確認非平票、正式淘汰處決時，才發放平民投中內鬼的 +5 PT（防止平票重投無限洗分）
+        // 確認非平票、正式淘汰開票時，才發放平民投中內鬼的 +5 PT（防止平票重投無限洗分）
         const elimStageKey = `elim_${st.gameSeq || 1}_${aliveSet.size}`;
         for (const r of validResps) {
           const tid = r.payload.targetId;
@@ -2110,7 +2171,7 @@
           window.PartyFX.playTone("win");
         } else {
           st.voteRound = (st.voteRound || 1) + 1;
-          st.lastResultMsg = `📢 ${outName} 被投票處決出局！場上仍有內鬼，請繼續下一輪描述與投票！`;
+          st.lastResultMsg = `📢 ${outName} 被投票淘汰出局！場上仍有內鬼，請繼續下一輪描述與投票！`;
         }
 
         await window.PartyDB.update("theme_sessions", `id=eq.${encodeURIComponent(sessionId)}`, {
@@ -2194,7 +2255,7 @@
       const chk = document.getElementById(`fig-chk-${stepKey}`);
       const isChecked = Boolean(chk?.checked) || this.checkedFigKeys.has(fullChkKey);
       if (!isChecked) {
-        window.PartyApp.toast("📸 請先拍照傳至 LINE 群組相簿，並勾選「已拍照傳 LINE 相簿」再按打卡！");
+        window.PartyApp.toast("📸 請先拍照傳至派對群組相簿，並勾選「已拍照傳群組相簿」再按打卡！");
         return;
       }
       const elapsedMs = Math.max(100, window.PartyDB.serverNowMs - s.state.searchStartedAt);

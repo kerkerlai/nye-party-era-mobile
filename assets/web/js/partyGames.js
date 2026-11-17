@@ -1532,7 +1532,7 @@
       `;
     },
 
-    // ==================== 5. 🔢 數字順風耳 ito（左／中／右三區塊清晰排版！） ====================
+    // ==================== 5. 🔢 數字順風耳（左／中／右三區塊清晰排版！） ====================
     renderIto(table, gs, me, amIn, isHost, playerMap) {
       const secretMap = gs.secretNumbers || {};
       const myNum = secretMap[me.id];
@@ -1794,7 +1794,7 @@
         return `
           <div class="mini-game-box" style="text-align:center;">
             <div style="font-size:24px;margin-bottom:4px;">🎮📺</div>
-            <div style="font-weight:800;color:#fde047;">選手正在實體 Switch 主機激戰中！</div>
+            <div style="font-weight:800;color:#fde047;">選手正在現場電視主機／派對遊戲激戰中！</div>
             <div class="muted-xs" style="margin-top:4px;">完賽後將由選手點選本局贏家並於此畫面即時揭曉結果！</div>
           </div>
         `;
@@ -1816,7 +1816,7 @@
 
       return `
         <details class="manual-settle-details" open>
-          <summary>🏆 Switch 比賽結束：點選本局贏家（可複選多位並列第 1！）</summary>
+          <summary>🏆 電玩派對比賽結束：點選本局贏家（可複選多位並列第 1！）</summary>
           <div class="muted-xs" style="margin-top:6px;">點選 1 位獨得冠軍榮譽分；若多人同分並列第 1 可同時勾選多位均分：</div>
           <div class="cheer-btn-grid" style="margin-top:8px;">
             ${activeParts
@@ -2011,7 +2011,7 @@
         </div>
 
         <div style="margin-top:12px;">
-          <div class="muted-xs" style="margin-bottom:4px;">💡 選填備註（例：瑪利歐賽車彩虹賽道／大亂鬥）</div>
+          <div class="muted-xs" style="margin-bottom:4px;">💡 選填備註（例：派對賽車彩虹賽道／多人亂鬥）</div>
           <input type="text" id="custom-table-note" class="input-dark" placeholder="輸入賽桌備註（選填）">
         </div>
 
@@ -2061,6 +2061,10 @@
 
         const noteEl = document.getElementById("custom-table-note");
         const note = noteEl ? noteEl.value.trim() : "";
+        if (note && window.PartyApp.containsObjectionableText?.(note)) {
+          window.PartyApp.toast("🚫 賽桌備註包含不雅或違規字詞，請修改後再開桌！");
+          return;
+        }
         const usage = window.PartyEngine.getDailyGameUsage(
           ctx.me.id,
           gm.id,

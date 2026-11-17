@@ -13,6 +13,31 @@
       .replace(/"/g, "&quot;");
   }
 
+  // 使用 Unicode 編碼定義不當字詞過濾清單（App Store Guideline 1.2 自動字詞攔截）
+  const OBJECTIONABLE_RX = new RegExp(
+    [
+      "\\u8272\\u60c5",
+      "\\u88f8\\u7167",
+      "\\u7d04\\u70ae",
+      "\\u6027\\u4ea4",
+      "\\u5f37\\u59e6",
+      "\\u5e79\\u4f60\\u5a18",
+      "\\u64cd\\u4f60\\u5abd",
+      "\\u83ca",
+      "\\u53bb\\u6b7b",
+      "\\u81ea\\u6bba",
+      "\\u6bba\\u6b7b\\u4f60",
+      "\\u767d\\u7661\\u667a\\u969c",
+      "\\u5783\\u573e\\u5ee2\\u7269",
+      "\\bf\\x75ck\\b",
+      "\\bb\\x69tch\\b",
+      "\\bc\\x75nt\\b",
+      "\\bn\\x69gger\\b",
+      "\\bp\\x6frn\\b",
+    ].join("|"),
+    "i"
+  );
+
   function getBlockedIdsSet() {
     try {
       const raw = localStorage.getItem("nye_blocked_uids");
@@ -67,6 +92,13 @@
     loginDraftName: "",
     loginDraftPin: "",
     showLoginPin: false,
+    eulaAccepted: (function () {
+      try {
+        return localStorage.getItem("nye_eula_accepted") === "1";
+      } catch (_) {
+        return false;
+      }
+    })(),
     uploadingAvatar: false,
     currentZoomScale: 1,
     reactionTestState: { phase: "idle", fireAt: 0, lastMs: null },
@@ -1780,6 +1812,12 @@
                 </div>
                 <div class="muted-xs" style="margin-top:3px;">※ 此為同房間統一通行碼，並非個人帳號密碼。</div>
               </div>
+              <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin:8px 0 4px;text-align:left;font-size:12.5px;line-height:1.5;color:#cbd5e1;">
+                <input type="checkbox" id="login-eula-chk" ${this.eulaAccepted ? "checked" : ""}
+                  onchange="PartyApp.eulaAccepted = this.checked"
+                  style="margin-top:3px;width:17px;height:17px;flex-shrink:0;accent-color:#fbbf24;">
+                <span>我已閱讀並同意 <a href="#" onclick="PartyApp.openPrivacyModal(); return false;" style="color:#38bdf8;text-decoration:underline;font-weight:700;">《服務條款（EULA）與隱私權政策》</a>，承諾遵守友善聚會守則（對不當、冒犯性或違法圖文採取零容忍原則）。</span>
+              </label>
               <button class="btn btn-gold" style="width:100%;margin-top:6px;padding:13px;font-size:16px;" onclick="PartyApp.submitLogin()">
                 🚀 進入《${esc(evTitle)}》！
               </button>
@@ -1803,17 +1841,27 @@
             }
 
             <div class="muted-xs" style="margin-top:16px;padding-top:10px;border-top:1px dashed rgba(148,163,184,0.22);line-height:1.55;text-align:left;">
-              🛡️ <b>純娛樂聲明與社群守則</b>：本 App 所有榮譽積分（PT）均由系統免費正向發放（免押分、不倒扣、無任何金錢交易或獎品兌換）。進入活動即代表同意遵守友善聚會守則，禁止上傳不當或冒犯性圖文（夥伴牆內建隱藏與檢舉機制）。
-              <a href="privacy.html" target="_blank" rel="noopener" style="color:#38bdf8;text-decoration:underline;margin-left:4px;">隱私權政策與服務條款</a>
+              🛡️ <b>純娛樂免費聲明</b>：本 App 所有榮譽積分（PT）均由系統免費正向發放（免門票、不倒扣、無任何金錢交易或獎品兌換）。夥伴牆與問答卡片內建即時隱藏封鎖與檢舉機制。
+              <a href="#" onclick="PartyApp.openPrivacyModal(); return false;" style="color:#38bdf8;text-decoration:underline;margin-left:4px;">檢視完整條款與隱私權政策</a>
             </div>
           </div>
         </div>
       `;
     },
 
+    syncOnboardingDraftsFromDom() {
+      const curN = document.getElementById("login-name");
+      const curP = document.getElementById("login-pin");
+      const curE = document.getElementById("login-eula-chk");
+      if (curN) this.loginDraftName = curN.value;
+      if (curP) this.loginDraftPin = curP.value;
+      if (curE) this.eulaAccepted = curE.checked;
+    },
+
     async handleLoginAvatarUpload(inputEl) {
       const file = inputEl && inputEl.files && inputEl.files[0];
       if (!file) return;
+      this.syncOnboardingDraftsFromDom();
       this.uploadingAvatar = true;
       this.render();
       try {
@@ -1830,20 +1878,14 @@
     },
 
     pickLoginEmoji(emoji) {
-      const curN = document.getElementById("login-name");
-      const curP = document.getElementById("login-pin");
-      if (curN) this.loginDraftName = curN.value;
-      if (curP) this.loginDraftPin = curP.value;
+      this.syncOnboardingDraftsFromDom();
       this.selectedLoginEmoji = emoji;
       this.pendingLoginAvatarUrl = "";
       this.render();
     },
 
     toggleLoginPinVisibility() {
-      const curN = document.getElementById("login-name");
-      const curP = document.getElementById("login-pin");
-      if (curN) this.loginDraftName = curN.value;
-      if (curP) this.loginDraftPin = curP.value;
+      this.syncOnboardingDraftsFromDom();
       this.showLoginPin = !this.showLoginPin;
       this.render();
     },
@@ -1878,6 +1920,14 @@
         .trim();
     },
 
+    containsObjectionableText(raw) {
+      return OBJECTIONABLE_RX.test(String(raw || ""));
+    },
+
+    isPlayerBlocked(playerId) {
+      return Boolean(playerId && getBlockedIdsSet().has(playerId));
+    },
+
     async submitLogin() {
       if (this._loginBusy) return;
       const name = String(document.getElementById("login-name")?.value ?? this.loginDraftName ?? "")
@@ -1893,6 +1943,20 @@
         this.toast("請輸入你的暱稱 ID！");
         return;
       }
+      if (this.containsObjectionableText(name)) {
+        this.toast("🚫 暱稱包含不雅或違規字詞，請換一個友善的聚會暱稱！");
+        return;
+      }
+      const eulaEl = document.getElementById("login-eula-chk");
+      const agreed = eulaEl ? Boolean(eulaEl.checked) : Boolean(this.eulaAccepted);
+      if (!agreed) {
+        this.toast("🛡️ 請先勾選同意《服務條款（EULA）與隱私權政策》再進入活動喔！");
+        return;
+      }
+      this.eulaAccepted = true;
+      try {
+        localStorage.setItem("nye_eula_accepted", "1");
+      } catch (_) {}
       if (!pin) {
         this.toast("🔑 請輸入主辦人提供的派對通行 PIN 碼才能登入喔！");
         document.getElementById("login-pin")?.focus();
@@ -2365,7 +2429,7 @@
               <span><b>📍 地址說明</b>：${esc(g.villaInfo?.address || "")}</span>
               ${
                 g.villaInfo?.mapUrl && /^https?:\/\//i.test(g.villaInfo.mapUrl)
-                  ? `<a href="${esc(g.villaInfo.mapUrl)}" target="_blank" rel="noopener" class="btn-copy" style="text-decoration:none;display:inline-flex;align-items:center;gap:3px;">🗺️ Google Maps 導航</a>`
+                  ? `<a href="${esc(g.villaInfo.mapUrl)}" class="btn-copy" style="text-decoration:none;display:inline-flex;align-items:center;gap:3px;">🗺️ 開啟地圖導航</a>`
                   : ""
               }
             </div>
@@ -2408,9 +2472,9 @@
                 🛡️ 本應用程式為親友聚會團康娛樂工具，所有榮譽積分（PT）均由系統免費發放，僅供活動排名紀念，不涉及任何真實金錢購買、儲值或獎品兌換。
               </div>
               <div class="grid-2-btns">
-                <a href="privacy.html" target="_blank" rel="noopener" class="btn btn-secondary btn-xs" style="text-decoration:none;text-align:center;">
-                  📄 隱私權與純娛樂聲明
-                </a>
+                <button type="button" class="btn btn-secondary btn-xs" onclick="PartyApp.openPrivacyModal()">
+                  📄 服務條款與隱私權政策
+                </button>
                 <button type="button" class="btn btn-ghost btn-xs" style="color:#fda4af;border-color:rgba(251,113,133,0.45);" onclick="PartyApp.confirmDeleteMyAccount()">
                   🗑️ 註銷並永久刪除我的帳號資料
                 </button>
@@ -2418,6 +2482,34 @@
             </div>
           </details>
         </div>
+      `;
+    },
+
+    openPrivacyModal() {
+      const modal = document.getElementById("party-modal");
+      const box = document.getElementById("party-modal-body");
+      if (!modal || !box) return;
+      modal.classList.remove("hidden");
+      box.innerHTML = `
+        <div class="modal-head">
+          <h3>📄 服務條款（EULA）與隱私權政策</h3>
+          <button class="btn-close" onclick="PartyGamesUI.closeModal()">✕</button>
+        </div>
+        <div style="max-height:66vh;overflow-y:auto;line-height:1.65;font-size:13px;color:#e2e8f0;padding-right:4px;">
+          <p class="muted-xs">最後更新日期：2026 年 11 月 17 日</p>
+          <p><b>《跨年英雄紀元》(NYE Party Era)</b> 為親友聚會專用之免費團康互動、行程查看與趣味榮譽計分輔助工具。</p>
+          <h4 style="color:#fbbf24;margin:10px 0 4px;">1. 純娛樂免費積分聲明（無金錢交易或兌換）</h4>
+          <p class="muted-sm">本應用程式內所有「PT（派對榮譽積分）」均由系統免費正向發放，僅供現場團康趣味排名紀念，<b>完全不涉及任何真實金錢購買、儲值、現金交易或實體／現金獎品兌換功能</b>。</p>
+          <h4 style="color:#fbbf24;margin:10px 0 4px;">2. 使用者授權條款（EULA）與不當內容零容忍</h4>
+          <p class="muted-sm">使用者建立暱稱、上傳大頭貼或填寫活動分享內容時，嚴禁包含色情猥褻、暴力威脅、仇恨歧視、騷擾或違法內容（內建自動字詞過濾攔截）。使用者可隨時於「👥 已報到夥伴牆」或問答卡片立即執行<b>本機隱藏封鎖</b>或<b>送出檢舉</b>，主辦人將於收到通知後 <b>24 小時內</b>審視並移除違規內容及停權違規帳號。</p>
+          <h4 style="color:#fbbf24;margin:10px 0 4px;">3. 資料收集範圍與隱私保護</h4>
+          <p class="muted-sm">僅收集使用者主動輸入之暱稱、個人頭貼照片（僅於主動點擊相機／相簿時取得權限）、團康問答互動紀錄與隨機本機匿名識別碼（用於自動登入）。<b>絕不收集</b> GPS 位置、通訊錄、金融資訊或廣告追蹤碼（IDFA），亦絕不提供予任何第三方機構。</p>
+          <h4 style="color:#fbbf24;margin:10px 0 4px;">4. 自助刪除帳號與聯絡方式</h4>
+          <p class="muted-sm">使用者可隨時於「🏠 個人主頁 ➔ ⚙️ 帳號管理 ➔ 🗑️ 註銷並永久刪除我的帳號資料」一鍵即時永久刪除個人檔案與所有紀錄。聯絡信箱：<code>kerkerlai@gmail.com</code>。</p>
+        </div>
+        <button type="button" class="btn btn-gold btn-sm" style="width:100%;margin-top:12px;" onclick="PartyGamesUI.closeModal()">
+          ✅ 我已了解並關閉視窗
+        </button>
       `;
     },
 
@@ -2906,7 +2998,7 @@
                       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
                         <span class="hh-tag" style="margin-left:0;">🤝 認證邀請（${roleLabel}）</span>
                         <span class="gold-text" style="font-size:12.5px;">+${c.points} PT</span>
-                        ${c.photo_url === "LINE_ALBUM" ? `<span class="q-tag q-ok">📸 已傳 LINE 相簿</span>` : ""}
+                        ${c.photo_url === "LINE_ALBUM" ? `<span class="q-tag q-ok">📸 已傳群組相簿</span>` : ""}
                       </div>
                       <div style="margin-top:4px;font-size:14px;">
                         <b>${esc(applicant.name)}</b> 請你確認達成：<b>${esc(c.title)}</b>
@@ -3322,7 +3414,7 @@
                 ? esc(this.formatFullTime(claim.approved_at || claim.updated_at || claim.created_at))
                 : "⏳ 尚在等待認證中"
             }</b></div>
-            ${claim.photo_url === "LINE_ALBUM" ? `<div>📸 拍照認證：已確認上傳 LINE 群組相簿</div>` : ""}
+            ${claim.photo_url === "LINE_ALBUM" ? `<div>📸 拍照認證：已確認上傳派對群組相簿</div>` : ""}
           </div>
         </div>
 
@@ -3566,6 +3658,18 @@
         this.toast("請至少填寫 2026 與 2027 的「故事/願望標題」與「1 個真實細節」！");
         return;
       }
+      const allTexts = [
+        s26.story,
+        s26.trueFact,
+        ...s26.fakeFacts,
+        s27.story,
+        s27.trueFact,
+        ...s27.fakeFacts,
+      ];
+      if (allTexts.some((txt) => this.containsObjectionableText(txt))) {
+        this.toast("🚫 分享內容包含不雅或違規字詞，請修改後再儲存！");
+        return;
+      }
       await window.PartyDB.update("players", `id=eq.${encodeURIComponent(ctx.me.id)}`, {
         share_2026: s26,
         share_2027: s27,
@@ -3744,7 +3848,7 @@
           card.needPhoto
             ? `<label class="line-check-box">
                  <input type="checkbox" id="clm-line-chk">
-                 <span>📸 我已拍下認證照片並上傳至 <b>LINE 群組相簿</b>（App 免傳照片不卡頓！）</span>
+                 <span>📸 我已拍下認證照片並上傳至 <b>派對群組相簿</b>（App 免傳照片不卡頓！）</span>
                </label>`
             : ""
         }
@@ -3788,7 +3892,7 @@
         if (needPhoto) {
           const lineChecked = Boolean(document.getElementById("clm-line-chk")?.checked);
           if (!lineChecked) {
-            this.toast("📸 此為拍照類任務，請先將照片傳到 LINE 群組相簿並打勾確認！");
+            this.toast("📸 此為拍照類任務，請先將照片傳到派對群組相簿並打勾確認！");
             return;
           }
           photoUrl = "LINE_ALBUM";
@@ -3964,7 +4068,7 @@
           badge.needLineAlbumCheck
             ? `<label class="line-check-box">
                  <input type="checkbox" id="chore-line-chk">
-                 <span>📸 我已將精選照片／短片上傳至 <b>LINE 群組相簿</b>！</span>
+                 <span>📸 我已將精選照片／短片上傳至 <b>派對群組相簿</b>！</span>
                </label>`
             : ""
         }
@@ -3985,7 +4089,7 @@
           return;
         }
         if (badge.needLineAlbumCheck && !document.getElementById("chore-line-chk")?.checked) {
-          this.toast("📸 請先將照片上傳至 LINE 群組相簿，並勾選確認框喔！");
+          this.toast("📸 請先將照片上傳至派對群組相簿，並勾選確認框喔！");
           return;
         }
         const note = document.getElementById("chore-note")?.value.trim() || "";

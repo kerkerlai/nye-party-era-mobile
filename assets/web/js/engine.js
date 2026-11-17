@@ -686,7 +686,7 @@
   }
 
   /**
-   * 計算 ito 數字順風耳 3～8 人階梯基礎淨利：3人+20, 4人+30, 5人+45, 6人+60, 7人+80, 8人+100 PT
+   * 計算數字順風耳 3～8 人階梯基礎獎勵：3人+20, 4人+30, 5人+45, 6人+60, 7人+80, 8人+100 PT
    */
   function getItoBaseNetProfit(playerCount) {
     if (playerCount >= 8) return 100;
@@ -718,7 +718,7 @@
       const curParts = cur.participants || table.participants || [];
       const activeParts = curParts.filter((p) => !p.forfeited);
       let normalizedWinners = [...new Set(incomingWinList)];
-      // 防刷分保護：Switch 若把「場上全部在場選手」都勾為贏家，視同全員平手和局
+      // 防刷分保護：電玩派對擂台若把「場上全部在場選手」都勾為贏家，視同全員平手和局
       if (
         cur.game_type === "switch_free" &&
         activeParts.length >= 2 &&
@@ -805,7 +805,7 @@
                 player_id: w.id,
                 delta: reward,
                 category: "party_win",
-                reason: `🏆 ito ${pCnt}人合作過關獎勵【+${reward} PT】`,
+                reason: `🏆 數字順風耳 ${pCnt}人合作過關獎勵【+${reward} PT】`,
                 day_key: dayKey,
                 meta: { tableId: finalTable.id, gameType: finalTable.game_type },
               });
@@ -1039,7 +1039,7 @@
       );
     }
 
-    // 2. 👑 Switch 大魔王（排除新手測試局）
+    // 2. 👑 電玩大魔王（排除新手測試局）
     const switchStats = {};
     (tables || [])
       .filter((t) => t.status === "finished" && !t.is_test_run && t.game_type === "switch_free")
@@ -1066,8 +1066,8 @@
         "crown_switch",
         w.id,
         80,
-        "Switch 大魔王",
-        `Switch 奪冠 ${w.metric} 場稱霸`,
+        "電玩大魔王",
+        `電玩派對擂台奪冠 ${w.metric} 場稱霸`,
         dayKey
       );
     }
