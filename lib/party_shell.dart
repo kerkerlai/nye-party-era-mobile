@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -15,6 +16,7 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 import 'config.dart';
+import 'firebase_background_watcher.dart';
 import 'local_asset_server.dart';
 
 abstract class PartyNativeAdapter {
@@ -22,7 +24,12 @@ abstract class PartyNativeAdapter {
   Future<void> triggerHaptic(String style);
   Future<void> playNativeWav(String wavBase64);
   Future<void> requestNotificationPermission();
-  Future<void> showNotification(int id, String title, String body);
+  Future<void> showNotification(
+    int id,
+    String title,
+    String body, {
+    String? payload,
+  });
   Future<void> launchExternalUrl(Uri uri);
   Future<void> exitApp();
   Future<String> startEmbeddedServer({
@@ -145,14 +152,21 @@ class RealPartyNativeAdapter implements PartyNativeAdapter {
   }
 
   @override
-  Future<void> showNotification(int id, String title, String body) async {
+  Future<void> showNotification(
+    int id,
+    String title,
+    String body, {
+    String? payload,
+  }) async {
     await requestNotificationPermission();
     const androidDetails = AndroidNotificationDetails(
-      'nye_party_channel',
-      '跨年賽桌與任務通知',
-      channelDescription: '新賽桌開盤揪團、隱藏任務見證與時段自動切換通知',
+      'nye_party_live_v2',
+      '跨年賽桌與任務即時通知',
+      channelDescription: '新賽桌開盤揪團、隱藏任務見證與時段自動切換鎖屏通知',
       importance: Importance.max,
-      priority: Priority.high,
+      priority: Priority.max,
+      visibility: NotificationVisibility.public,
+      category: AndroidNotificationCategory.social,
       playSound: true,
       enableVibration: true,
     );
@@ -162,12 +176,14 @@ class RealPartyNativeAdapter implements PartyNativeAdapter {
       presentList: true,
       presentBadge: true,
       presentSound: true,
+      interruptionLevel: InterruptionLevel.timeSensitive,
     );
     await notifications.show(
       id,
       title,
       body,
       const NotificationDetails(android: androidDetails, iOS: iosDetails),
+      payload: payload,
     );
   }
 
@@ -271,49 +287,152 @@ class RealPartyNativeAdapter implements PartyNativeAdapter {
 class PartyShellScreen extends StatefulWidget {
   final FlutterLocalNotificationsPlugin notifications;
   final PartyNativeAdapter? adapterOverride;
+  final HttpClient Function()? backgroundHttpClientFactory;
   const PartyShellScreen({
     super.key,
     required this.notifications,
     this.adapterOverride,
+    this.backgroundHttpClientFactory,
   });
 
   @override
   State<PartyShellScreen> createState() => _PartyShellScreenState();
 }
 
-class _PartyShellScreenState extends State<PartyShellScreen> {
+class _PartyShellScreenState extends State<PartyShellScreen>
+    with WidgetsBindingObserver {
   final ImagePicker _imagePicker = ImagePicker();
   late final PartyNativeAdapter _adapter;
   PartyWebSession? _session;
+  StreamSubscription<String>? _tapSub;
+  FirebaseBackgroundWatcher? _bgWatcher;
+  final List<String> _queuedTapPayloads = <String>[];
   String _embeddedOrigin = 'http://127.0.0.1:18765';
-  String _activeFirebaseUrl = AppConfig.defaultFirebaseDbUrl;
+  final String _activeFirebaseUrl = AppConfig.defaultFirebaseDbUrl;
   String _nativeDeviceId = '';
+  String _loggedInPlayerId = '';
+  bool _pageReady = false;
   bool _offline = false;
   int _progress = 0;
   int _notifSeq = 1;
   DateTime? _lastBackPressAt;
 
-  static bool isValidHttpUrl(String raw) {
-    final uri = Uri.tryParse(raw.trim());
-    return uri != null &&
-        (uri.scheme == 'http' || uri.scheme == 'https') &&
-        uri.host.isNotEmpty;
-  }
-
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _adapter =
         widget.adapterOverride ?? RealPartyNativeAdapter(widget.notifications);
     _adapter.setWakelock(true);
+    for (final p in NotificationTapHub.instance.drainPending()) {
+      _queuedTapPayloads.add(p);
+    }
+    _tapSub = NotificationTapHub.instance.stream.listen(_deliverTapPayload);
     _initSession();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _tapSub?.cancel();
+    _bgWatcher?.stopAndDrainSeenKeys();
+    _bgWatcher = null;
     _adapter.setWakelock(false);
     _adapter.stopEmbeddedServer();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _startBackgroundWatcherIfNeeded();
+    } else if (state == AppLifecycleState.resumed) {
+      _stopBackgroundWatcherAndSyncWeb();
+    }
+  }
+
+  void _startBackgroundWatcherIfNeeded() {
+    if (_bgWatcher != null && _bgWatcher!.isRunning) return;
+    if (_loggedInPlayerId.trim().isEmpty || _activeFirebaseUrl.trim().isEmpty) {
+      return;
+    }
+    _bgWatcher = FirebaseBackgroundWatcher(
+      firebaseDbUrl: _activeFirebaseUrl,
+      playerId: _loggedInPlayerId,
+      httpClientFactory: widget.backgroundHttpClientFactory,
+      onNotify: (title, body, payload) async {
+        await _adapter.showNotification(
+          _notifSeq++,
+          title,
+          body,
+          payload: payload,
+        );
+      },
+    );
+    _bgWatcher!.start();
+  }
+
+  Future<void> _stopBackgroundWatcherAndSyncWeb() async {
+    final seenMap = _bgWatcher?.stopAndDrainSeenKeys();
+    _bgWatcher = null;
+    _adapter.setWakelock(true);
+
+    for (final p in NotificationTapHub.instance.drainPending()) {
+      _queuedTapPayloads.add(p);
+    }
+
+    final sess = _session;
+    if (sess != null && !_offline) {
+      if (seenMap != null) {
+        final seenJsonStr = jsonEncode(seenMap);
+        try {
+          await sess.runJs(
+            'if (window.PartyApp && window.PartyApp.onNativeResume) { window.PartyApp.onNativeResume(${jsonEncode(seenJsonStr)}); }',
+          );
+        } catch (_) {}
+      } else {
+        try {
+          await sess.runJs(
+            'if (window.PartyApp && window.PartyApp.onNativeResume) { window.PartyApp.onNativeResume(null); }',
+          );
+        } catch (_) {}
+      }
+      await _flushQueuedTapPayloads();
+    }
+  }
+
+  Future<void> _deliverTapPayload(String payload) async {
+    if (payload.trim().isEmpty) return;
+    final sess = _session;
+    if (sess == null || !_pageReady || _offline) {
+      _queuedTapPayloads.add(payload);
+      return;
+    }
+    try {
+      await sess.runJs(
+        'if (window.PartyApp && window.PartyApp.handleNotificationTap) { window.PartyApp.handleNotificationTap(${jsonEncode(payload)}); }',
+      );
+    } catch (_) {
+      _queuedTapPayloads.add(payload);
+    }
+  }
+
+  Future<void> _flushQueuedTapPayloads() async {
+    final sess = _session;
+    if (sess == null || !_pageReady || _offline || _queuedTapPayloads.isEmpty) {
+      return;
+    }
+    final batch = List<String>.from(_queuedTapPayloads);
+    _queuedTapPayloads.clear();
+    for (final payload in batch) {
+      try {
+        await sess.runJs(
+          'if (window.PartyApp && window.PartyApp.handleNotificationTap) { window.PartyApp.handleNotificationTap(${jsonEncode(payload)}); }',
+        );
+      } catch (_) {}
+    }
   }
 
   Future<String> _ensurePersistentDeviceId(SharedPreferences prefs) async {
@@ -365,15 +484,11 @@ class _PartyShellScreenState extends State<PartyShellScreen> {
   }
 
   Future<void> _initSession() async {
-    final prefs = await SharedPreferences.getInstance();
-    _nativeDeviceId = await _ensurePersistentDeviceId(prefs);
+      final prefs = await SharedPreferences.getInstance();
+      _nativeDeviceId = await _ensurePersistentDeviceId(prefs);
+      _loggedInPlayerId = prefs.getString('nye_logged_in_player_id') ?? '';
 
-    final savedFb = prefs.getString('custom_firebase_db_url');
-    if (savedFb != null && isValidHttpUrl(savedFb)) {
-      _activeFirebaseUrl = savedFb.trim().replaceAll(RegExp(r'/+$'), '');
-    }
-
-    _embeddedOrigin = await _adapter.startEmbeddedServer(
+      _embeddedOrigin = await _adapter.startEmbeddedServer(
       firebaseDbUrl: _activeFirebaseUrl,
       nativeDeviceId: _nativeDeviceId,
     );
@@ -385,11 +500,18 @@ class _PartyShellScreenState extends State<PartyShellScreen> {
         if (mounted) setState(() => _progress = p);
       },
       onPageStarted: () {
-        if (mounted) setState(() => _offline = false);
+        if (mounted) {
+          setState(() {
+            _offline = false;
+            _pageReady = false;
+          });
+        }
         _injectRuntimeGlobals(created);
       },
       onPageFinished: () {
+        _pageReady = true;
         _injectRuntimeGlobals(created);
+        _flushQueuedTapPayloads();
       },
       onError: (isMainFrame) {
         if (isMainFrame && mounted) {
@@ -402,8 +524,12 @@ class _PartyShellScreenState extends State<PartyShellScreen> {
     );
 
     if (mounted) {
-      setState(() => _session = created);
+      setState(() {
+        _session = created;
+        _pageReady = true;
+      });
       await _injectRuntimeGlobals(created);
+      await _flushQueuedTapPayloads();
     }
   }
 
@@ -492,14 +618,27 @@ class _PartyShellScreenState extends State<PartyShellScreen> {
         await _adapter.playNativeWav(wavB64);
       } else if (type == 'request_permission') {
         await _adapter.requestNotificationPermission();
+      } else if (type == 'sync_player') {
+        final pid = (data['playerId'] as String? ?? '').trim();
+        _loggedInPlayerId = pid;
+        final prefs = await SharedPreferences.getInstance();
+        if (pid.isEmpty) {
+          await prefs.remove('nye_logged_in_player_id');
+          _bgWatcher?.stopAndDrainSeenKeys();
+          _bgWatcher = null;
+        } else {
+          await prefs.setString('nye_logged_in_player_id', pid);
+        }
       } else if (type == 'notify') {
         final title = data['title'] as String? ?? '跨年英雄紀元';
         final body = data['body'] as String? ?? '';
-        await _adapter.showNotification(_notifSeq++, title, body);
-      } else if (type == 'switch_server') {
-        if (mounted) {
-          await _openFirebaseConfigDialog();
-        }
+        final payload = data['payload'] as String?;
+        await _adapter.showNotification(
+          _notifSeq++,
+          title,
+          body,
+          payload: payload,
+        );
       }
     } catch (_) {}
   }
@@ -536,76 +675,6 @@ class _PartyShellScreenState extends State<PartyShellScreen> {
       return;
     }
     await _adapter.exitApp();
-  }
-
-  Future<void> _openFirebaseConfigDialog() async {
-    final textCtrl = TextEditingController(text: _activeFirebaseUrl);
-    final next = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF111827),
-        title: const Text(
-          '🔥 Firebase 資料庫網址設定',
-          style: TextStyle(color: Colors.white, fontSize: 18),
-        ),
-        content: TextField(
-          key: const Key('server-url-input'),
-          controller: textCtrl,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
-            hintText:
-                'https://nye-party-era-default-rtdb.asia-southeast1.firebasedatabase.app',
-            hintStyle: TextStyle(color: Colors.white54),
-          ),
-        ),
-        actions: [
-          TextButton(
-            key: const Key('btn-restore-default-url'),
-            onPressed: () => Navigator.pop(ctx, AppConfig.defaultFirebaseDbUrl),
-            child: const Text('恢復預設網址'),
-          ),
-          TextButton(
-            key: const Key('btn-cancel-url'),
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          ElevatedButton(
-            key: const Key('btn-save-url'),
-            onPressed: () => Navigator.pop(ctx, textCtrl.text.trim()),
-            child: const Text('儲存並重新載入'),
-          ),
-        ],
-      ),
-    );
-    if (next == null || next.isEmpty) return;
-
-    if (!isValidHttpUrl(next)) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('⚠️ 請輸入有效的 https://...firebasedatabase.app 網址！'),
-          ),
-        );
-      }
-      return;
-    }
-
-    final normalized = next.replaceAll(RegExp(r'/+$'), '');
-    final prefs = await SharedPreferences.getInstance();
-    if (normalized == AppConfig.defaultFirebaseDbUrl) {
-      await prefs.remove('custom_firebase_db_url');
-    } else {
-      await prefs.setString('custom_firebase_db_url', normalized);
-    }
-    _adapter.updateEmbeddedServerFirebaseUrl(normalized);
-    setState(() {
-      _activeFirebaseUrl = normalized;
-      _offline = false;
-    });
-    if (_session != null) {
-      await _injectRuntimeGlobals(_session!);
-      await _session!.reload();
-    }
   }
 
   @override
@@ -646,15 +715,6 @@ class _PartyShellScreenState extends State<PartyShellScreen> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '目前 Firebase 位址：$_activeFirebaseUrl',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 13,
-                          ),
-                        ),
                         const SizedBox(height: 18),
                         ElevatedButton.icon(
                           key: const Key('btn-offline-reload'),
@@ -664,12 +724,6 @@ class _PartyShellScreenState extends State<PartyShellScreen> {
                           },
                           icon: const Icon(Icons.refresh),
                           label: const Text('重新整理'),
-                        ),
-                        const SizedBox(height: 8),
-                        TextButton(
-                          key: const Key('btn-offline-switch-url'),
-                          onPressed: _openFirebaseConfigDialog,
-                          child: const Text('設定／切換 Firebase 資料庫網址'),
                         ),
                       ],
                     ),

@@ -3,10 +3,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'config.dart';
+import 'firebase_background_watcher.dart';
 import 'party_shell.dart';
 
 final FlutterLocalNotificationsPlugin localNotifications =
     FlutterLocalNotificationsPlugin();
+
+@pragma('vm:entry-point')
+void onBackgroundNotificationTap(NotificationResponse response) {
+  NotificationTapHub.instance.emitTap(response.payload);
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,7 +35,23 @@ Future<void> main() async {
   );
   await localNotifications.initialize(
     const InitializationSettings(android: androidInit, iOS: iosInit),
+    onDidReceiveNotificationResponse: (NotificationResponse response) {
+      NotificationTapHub.instance.emitTap(response.payload);
+    },
+    onDidReceiveBackgroundNotificationResponse: onBackgroundNotificationTap,
   );
+
+  try {
+    final launchDetails =
+        await localNotifications.getNotificationAppLaunchDetails();
+    if (launchDetails != null &&
+        launchDetails.didNotificationLaunchApp &&
+        launchDetails.notificationResponse?.payload != null) {
+      NotificationTapHub.instance.emitTap(
+        launchDetails.notificationResponse!.payload,
+      );
+    }
+  } catch (_) {}
 
   runApp(const NyePartyApp());
 }

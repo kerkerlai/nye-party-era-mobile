@@ -6,6 +6,7 @@ import UserNotifications
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var activePlayers: [AVAudioPlayer] = []
+  private var bgTaskId: UIBackgroundTaskIdentifier = .invalid
 
   private func activatePlaybackAudioSession() {
     let session = AVAudioSession.sharedInstance()
@@ -14,6 +15,20 @@ import UserNotifications
       try session.setActive(true)
     } catch {
       // Ignore non-fatal audio session errors in simulator/headless runs
+    }
+  }
+
+  private func beginShortBackgroundKeepAlive() {
+    endShortBackgroundKeepAlive()
+    bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "NYEPartyLiveWatcher") { [weak self] in
+      self?.endShortBackgroundKeepAlive()
+    }
+  }
+
+  private func endShortBackgroundKeepAlive() {
+    if bgTaskId != .invalid {
+      UIApplication.shared.endBackgroundTask(bgTaskId)
+      bgTaskId = .invalid
     }
   }
 
@@ -39,12 +54,42 @@ import UserNotifications
       object: nil,
       queue: .main
     ) { [weak self] _ in
+      self?.endShortBackgroundKeepAlive()
       self?.activatePlaybackAudioSession()
     }
+    NotificationCenter.default.addObserver(
+      forName: UIApplication.didEnterBackgroundNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      self?.beginShortBackgroundKeepAlive()
+    }
     if #available(iOS 10.0, *) {
-      UNUserNotificationCenter.current().delegate = self as? UNUserNotificationCenterDelegate
+      UNUserNotificationCenter.current().delegate = self
     }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  @available(iOS 10.0, *)
+  override func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    if #available(iOS 14.0, *) {
+      completionHandler([.banner, .list, .sound, .badge])
+    } else {
+      completionHandler([.alert, .sound, .badge])
+    }
+  }
+
+  @available(iOS 10.0, *)
+  override func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    super.userNotificationCenter(center, didReceive: response, withCompletionHandler: completionHandler)
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {

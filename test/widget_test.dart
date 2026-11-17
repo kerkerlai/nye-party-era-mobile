@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nye_party_era/config.dart';
+import 'package:nye_party_era/firebase_background_watcher.dart';
 import 'package:nye_party_era/local_asset_server.dart';
 import 'package:nye_party_era/party_shell.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -96,11 +97,17 @@ class FakePartyNativeAdapter implements PartyNativeAdapter {
   }
 
   @override
-  Future<void> showNotification(int id, String title, String body) async {
+  Future<void> showNotification(
+    int id,
+    String title,
+    String body, {
+    String? payload,
+  }) async {
     shownNotifications.add(<String, Object>{
       'id': id,
       'title': title,
       'body': body,
+      if (payload != null) 'payload': payload,
     });
   }
 
@@ -278,7 +285,7 @@ void main() {
     );
   });
 
-  group('2. Offline Resilience & Firebase DB Switcher Dialog QA', () {
+  group('2. Offline Resilience & Fixed Endpoint Security QA', () {
     testWidgets(
       'Subresource errors do NOT interrupt game; main-frame error reloads cleanly',
       (tester) async {
@@ -304,7 +311,7 @@ void main() {
     );
 
     testWidgets(
-      'Firebase URL dialog rejects invalid URLs, saves rehearsal Firebase URL, updates LocalAssetServer, and restores default',
+      'App Store Guideline 5.6: runtime server-URL switching is disabled and fixed to AppConfig.defaultFirebaseDbUrl',
       (tester) async {
         SharedPreferences.setMockInitialValues(<String, Object>{});
         final adapter = FakePartyNativeAdapter();
@@ -314,45 +321,9 @@ void main() {
 
         adapter.emitBridgeMessage('{"type":"switch_server"}');
         await tester.pumpAndSettle();
-        expect(find.text('🔥 Firebase 資料庫網址設定'), findsOneWidget);
-
-        await tester.enterText(
-          find.byKey(const Key('server-url-input')),
-          'not_a_valid_url',
-        );
-        await tester.tap(find.byKey(const Key('btn-save-url')));
-        await tester.pumpAndSettle();
-        expect(
-          find.text('⚠️ 請輸入有效的 https://...firebasedatabase.app 網址！'),
-          findsOneWidget,
-        );
-
-        adapter.emitBridgeMessage('{"type":"switch_server"}');
-        await tester.pumpAndSettle();
-        await tester.enterText(
-          find.byKey(const Key('server-url-input')),
-          'https://rehearsal-nye-default-rtdb.asia-southeast1.firebasedatabase.app/',
-        );
-        await tester.tap(find.byKey(const Key('btn-save-url')));
-        await tester.pumpAndSettle();
-
-        final prefs = await SharedPreferences.getInstance();
-        expect(
-          prefs.getString('custom_firebase_db_url'),
-          'https://rehearsal-nye-default-rtdb.asia-southeast1.firebasedatabase.app',
-        );
-        expect(
-          adapter.lastEmbeddedFirebaseUrl,
-          'https://rehearsal-nye-default-rtdb.asia-southeast1.firebasedatabase.app',
-        );
-        expect(adapter.session.reloadCount, 1);
-
-        adapter.emitBridgeMessage('{"type":"switch_server"}');
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('btn-restore-default-url')));
-        await tester.pumpAndSettle();
-        expect(prefs.getString('custom_firebase_db_url'), isNull);
+        expect(find.text('🔥 Firebase 資料庫網址設定'), findsNothing);
         expect(adapter.lastEmbeddedFirebaseUrl, AppConfig.defaultFirebaseDbUrl);
+        expect(adapter.session.reloadCount, 0);
       },
     );
   });
@@ -371,11 +342,12 @@ void main() {
         adapter.emitBridgeMessage('{"type":"haptic","style":"heavy"}');
         adapter.emitBridgeMessage('{"type":"play_wav","wavBase64":"UklGRiQAAABXQVZF"}');
         adapter.emitBridgeMessage('{"type":"request_permission"}');
+        adapter.emitBridgeMessage('{"type":"sync_player","playerId":"p_alice"}');
         adapter.emitBridgeMessage(
-          '{"type":"notify","title":"🔥 新賽桌開盤！","body":"終極密碼生死鬥集結中"}',
+          '{"type":"notify","title":"🔥 新賽桌開盤！","body":"終極密碼生死鬥集結中","payload":"{\\"action\\":\\"open_table\\",\\"tableId\\":\\"tbl_1\\"}"}',
         );
         adapter.emitBridgeMessage(
-          '{"type":"notify","title":"🕵️ 好友見證","body":"Alice 請你確認任務"}',
+          '{"type":"notify","title":"🕵️ 好友見證","body":"Alice 請你確認任務","payload":"{\\"action\\":\\"verify_claim\\",\\"claimId\\":\\"clm_1\\"}"}',
         );
         adapter.emitBridgeMessage('{malformed_json_will_not_crash');
         await tester.pump();
@@ -385,7 +357,150 @@ void main() {
         expect(adapter.permissionRequests, 1);
         expect(adapter.shownNotifications.length, 2);
         expect(adapter.shownNotifications[0]['id'], 1);
+        expect(
+          adapter.shownNotifications[0]['payload'],
+          '{"action":"open_table","tableId":"tbl_1"}',
+        );
         expect(adapter.shownNotifications[1]['id'], 2);
+        expect(
+          adapter.shownNotifications[1]['payload'],
+          '{"action":"verify_claim","claimId":"clm_1"}',
+        );
+
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getString('nye_logged_in_player_id'), 'p_alice');
+
+        // 點擊推播通知後自動轉發 deep-link payload 至 WebView handleNotificationTap (g)
+        NotificationTapHub.instance.emitTap(
+          '{"action":"verify_claim","claimId":"clm_1"}',
+        );
+        await tester.pump();
+        expect(
+          adapter.session.executedJs.any(
+            (js) =>
+                js.contains('handleNotificationTap') && js.contains('clm_1'),
+          ),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'FirebaseBackgroundWatcher delivers lock-screen notifications for tables, nudges, claims, and drains seenKeys on resume (q2)',
+      () async {
+        final prevOverrides = HttpOverrides.current;
+        HttpOverrides.global = null;
+
+        Map<String, dynamic> dbState = <String, dynamic>{
+          'players': <String, dynamic>{
+            'p_alice': <String, dynamic>{'id': 'p_alice', 'name': 'Alice'},
+            'p_bob': <String, dynamic>{'id': 'p_bob', 'name': 'Bob'},
+          },
+          'tables': <String, dynamic>{
+            'tbl_existing': <String, dynamic>{
+              'id': 'tbl_existing',
+              'status': 'open',
+              'host_id': 'p_bob',
+              'title': '舊賽桌',
+              'participants': <Map<String, dynamic>>[],
+              'game_state': <String, dynamic>{},
+            },
+          },
+          'claims': <String, dynamic>{},
+          'theme_sessions': <String, dynamic>{},
+        };
+
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        server.listen((HttpRequest req) async {
+          if (req.headers.value(HttpHeaders.acceptHeader) ==
+              'text/event-stream') {
+            req.response.statusCode = 200;
+            req.response.headers.contentType = ContentType(
+              'text',
+              'event-stream',
+              charset: 'utf-8',
+            );
+            await req.response.flush();
+            // 保持長連線直到測試結束
+            return;
+          }
+          req.response.statusCode = 200;
+          req.response.headers.contentType = ContentType.json;
+          req.response.write(jsonEncode(dbState));
+          await req.response.close();
+        });
+
+        final fired = <Map<String, String>>[];
+        final watcher = FirebaseBackgroundWatcher(
+          firebaseDbUrl: 'http://127.0.0.1:${server.port}',
+          playerId: 'p_alice',
+          pollInterval: const Duration(seconds: 60),
+          onNotify: (title, body, payload) async {
+            fired.add(<String, String>{
+              'title': title,
+              'body': body,
+              'payload': payload,
+            });
+          },
+        );
+
+        try {
+          await watcher.start();
+          // 首次啟動只建立基準快照，不應亂彈舊賽桌推播
+          expect(fired, isEmpty);
+
+          // 模擬鎖屏期間：Bob 開新賽桌 + Bob 對舊賽桌按廣播催人 + Bob 發起任務見證 + Alice 自己的任務通過
+          (dbState['tables'] as Map<String, dynamic>)['tbl_new'] =
+              <String, dynamic>{
+                'id': 'tbl_new',
+                'status': 'open',
+                'host_id': 'p_bob',
+                'title': '終極密碼生死鬥',
+                'participants': <Map<String, dynamic>>[],
+                'game_state': <String, dynamic>{},
+              };
+          ((dbState['tables'] as Map<String, dynamic>)['tbl_existing']
+              as Map<String, dynamic>)['game_state'] = <String, dynamic>{
+            'lastNudgeAt': 1700000001,
+            'lastNudgeBy': 'Bob',
+          };
+          (dbState['claims'] as Map<String, dynamic>)['clm_verify'] =
+              <String, dynamic>{
+                'id': 'clm_verify',
+                'status': 'pending',
+                'applicant_id': 'p_bob',
+                'target_id': 'p_alice',
+                'witness_ids': <String>[],
+                'title': '隱藏任務【破冰】',
+                'points': 35,
+              };
+          (dbState['claims'] as Map<String, dynamic>)['clm_mine'] =
+              <String, dynamic>{
+                'id': 'clm_mine',
+                'status': 'approved',
+                'applicant_id': 'p_alice',
+                'target_id': 'p_bob',
+                'witness_ids': <String>[],
+                'title': '隱藏任務【乾杯】',
+                'points': 35,
+              };
+
+          await watcher.pollOnce();
+          expect(fired.length, 4);
+          expect(fired[0]['payload'], '{"action":"open_table","tableId":"tbl_existing"}');
+          expect(fired[1]['payload'], '{"action":"open_table","tableId":"tbl_new"}');
+          expect(fired[2]['payload'], '{"action":"verify_claim","claimId":"clm_verify"}');
+          expect(fired[3]['payload'], '{"action":"open_claim_detail","claimId":"clm_mine"}');
+
+          final drained = watcher.stopAndDrainSeenKeys();
+          expect(drained['tables'], contains('tbl_new'));
+          expect(drained['claims'], contains('clm_verify'));
+          expect(drained['approvedClaims'], contains('clm_mine'));
+        } finally {
+          watcher.stopAndDrainSeenKeys();
+          await server.close(force: true);
+          HttpOverrides.global = prevOverrides;
+        }
       },
     );
 
@@ -532,6 +647,8 @@ void main() {
       final plist = File('ios/Runner/Info.plist').readAsStringSync();
       expect(plist.contains('<key>NSCameraUsageDescription</key>'), isTrue);
       expect(plist.contains('<key>NSPhotoLibraryUsageDescription</key>'), isTrue);
+      expect(plist.contains('<key>NSAllowsLocalNetworking</key>'), isTrue);
+      expect(plist.contains('NSAllowsArbitraryLoads'), isFalse);
       expect(plist.contains('UIInterfaceOrientationPortrait'), isTrue);
       expect(plist.contains('UIInterfaceOrientationPortraitUpsideDown'), isTrue);
       expect(plist.contains('UIInterfaceOrientationLandscapeLeft'), isTrue);
@@ -551,5 +668,47 @@ void main() {
       final bytes = iosMarketingIcon.readAsBytesSync();
       expect(bytes[25], 2);
     });
+
+    test(
+      'App Store Guideline 5.6 / 5.3 / 5.1.1(v) Audit: zero gambling/hidden-feature triggers + self-service account deletion',
+      () {
+        final forbidden = RegExp(
+          r'(下注|押注|退注|對賭|賭聖|賭|博弈|派彩|彩池|本金|總獎金|獎金|紅包|🧧|低保|保密中|自動解封|黑盒|handleLogoTap|_logoTap|reviewMode|isReviewMode|switch_server|custom_firebase_db_url|NSAllowsArbitraryLoads|\bbets?\b|\bbettor\w*\b|\bbetting\b|\bstakes?\b|\bpayout\w*\b|\bante\b|red_packet|redPacket|RedPacket|party_stake|bet_stake|partyPlayStake|partyBetStake)',
+          caseSensitive: false,
+        );
+        final filesToScan = <File>[
+          ...Directory('assets/web')
+              .listSync(recursive: true)
+              .whereType<File>()
+              .where((f) => !f.path.endsWith('.png') && !f.path.endsWith('.ico')),
+          ...Directory('lib')
+              .listSync(recursive: true)
+              .whereType<File>()
+              .where((f) => f.path.endsWith('.dart')),
+          File('docs/privacy.html'),
+          File('ios/Runner/Info.plist'),
+        ];
+        for (final f in filesToScan) {
+          final content = f.readAsStringSync();
+          final m = forbidden.firstMatch(content);
+          expect(
+            m,
+            isNull,
+            reason:
+                'Forbidden store-review term "${m?.group(0)}" found in ${f.path}',
+          );
+        }
+
+        final appJs = File('assets/web/js/app.js').readAsStringSync();
+        expect(appJs.contains('onClickHostTab'), isTrue);
+        expect(appJs.contains('confirmDeleteMyAccount'), isTrue);
+        expect(appJs.contains('openMemberSafetyModal'), isTrue);
+        expect(appJs.contains('reportMemberContent'), isTrue);
+        expect(appJs.contains('unlimitedWarmup: true'), isTrue);
+
+        final privacyHtml = File('assets/web/privacy.html').readAsStringSync();
+        expect(privacyHtml.contains('註銷並永久刪除我的帳號資料'), isTrue);
+      },
+    );
   });
 }
