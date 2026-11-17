@@ -647,12 +647,38 @@ void main() {
       final plist = File('ios/Runner/Info.plist').readAsStringSync();
       expect(plist.contains('<key>NSCameraUsageDescription</key>'), isTrue);
       expect(plist.contains('<key>NSPhotoLibraryUsageDescription</key>'), isTrue);
+      expect(plist.contains('NSPhotoLibraryAddUsageDescription'), isFalse);
+      expect(plist.contains('UIBackgroundModes'), isFalse);
       expect(plist.contains('<key>NSAllowsLocalNetworking</key>'), isTrue);
       expect(plist.contains('NSAllowsArbitraryLoads'), isFalse);
       expect(plist.contains('UIInterfaceOrientationPortrait'), isTrue);
       expect(plist.contains('UIInterfaceOrientationPortraitUpsideDown'), isTrue);
       expect(plist.contains('UIInterfaceOrientationLandscapeLeft'), isTrue);
       expect(plist.contains('UIInterfaceOrientationLandscapeRight'), isTrue);
+
+      final privacyManifest = File(
+        'ios/Runner/PrivacyInfo.xcprivacy',
+      ).readAsStringSync();
+      expect(privacyManifest.contains('<key>NSPrivacyTracking</key>'), isTrue);
+      expect(
+        privacyManifest.contains('NSPrivacyAccessedAPICategoryUserDefaults'),
+        isTrue,
+      );
+      expect(privacyManifest.contains('CA92.1'), isTrue);
+      expect(
+        privacyManifest.contains('NSPrivacyCollectedDataTypeUserID'),
+        isTrue,
+      );
+      expect(
+        privacyManifest.contains('NSPrivacyCollectedDataTypePhotosorVideos'),
+        isTrue,
+      );
+      expect(
+        privacyManifest.contains('NSPrivacyCollectedDataTypeGameplayContent'),
+        isTrue,
+      );
+      final pbx = File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
+      expect(pbx.contains('PrivacyInfo.xcprivacy in Resources'), isTrue);
 
       final appDelegate = File('ios/Runner/AppDelegate.swift').readAsStringSync();
       expect(
@@ -673,7 +699,7 @@ void main() {
       'App Store Guideline 5.6 / 5.3 / 5.1.1(v) Audit: zero gambling/hidden-feature triggers + self-service account deletion',
       () {
         final forbidden = RegExp(
-          r'(下注|押注|退注|對賭|賭聖|賭|博弈|派彩|彩池|本金|總獎金|獎金|紅包|🧧|低保|保密中|自動解封|黑盒|handleLogoTap|_logoTap|reviewMode|isReviewMode|switch_server|custom_firebase_db_url|NSAllowsArbitraryLoads|\bbets?\b|\bbettor\w*\b|\bbetting\b|\bstakes?\b|\bpayout\w*\b|\bante\b|red_packet|redPacket|RedPacket|party_stake|bet_stake|partyPlayStake|partyBetStake)',
+          r'(下注|押注|退注|對賭|賭聖|賭|博弈|派彩|彩池|本金|總獎金|獎金|紅包|🧧|低保|保密中|自動解封|黑盒|處決|宿醉|花雕|威力彩|瑪利歐|Switch\s*(自由|大魔王|主機|比賽)|數字順風耳\s*ito|頻率同步\s*Wavelength|LINE\s*(群組|相簿)|target="_blank"|handleLogoTap|_logoTap|reviewMode|isReviewMode|switch_server|custom_firebase_db_url|NSAllowsArbitraryLoads|\bbets?\b|\bbettor\w*\b|\bbetting\b|\bstakes?\b|\bpayout\w*\b|\bante\b|red_packet|redPacket|RedPacket|party_stake|bet_stake|partyPlayStake|partyBetStake)',
           caseSensitive: false,
         );
         final filesToScan = <File>[

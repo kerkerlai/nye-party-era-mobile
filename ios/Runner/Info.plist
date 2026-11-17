@@ -34,11 +34,9 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>用於拍攝並設定您在派對活動中的個人大頭貼照片。</string>
+	<string>用於拍攝您的個人大頭貼自拍照，並顯示於聚會成員名單、分房表與團康遊戲計分板上供現場親友辨識。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>用於從手機相簿選取並上傳您在派對活動中的個人大頭貼照片。</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>用於儲存活動攻略圖卡或紀念畫面至您的相簿。</string>
+	<string>用於從手機相簿選取一張照片作為您的個人大頭貼，並顯示於聚會成員名單、分房表與團康遊戲計分板上供親友辨識。</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -62,10 +60,6 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>fetch</string>
-	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
